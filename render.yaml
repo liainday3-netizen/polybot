@@ -1,0 +1,37 @@
+# Render deployment — Background Worker (24/7 bot)
+# Deploy: connect your GitHub repo, Render auto-detects this file.
+
+services:
+  - type: worker
+    name: polybot
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    envVars:
+      - key: POLYMARKET_PK
+        sync: false
+      - key: POLYMARKET_FUNDER
+        sync: false
+      - key: POLYMARKET_API_KEY
+        sync: false
+      - key: POLYMARKET_API_SECRET
+        sync: false
+      - key: POLYMARKET_API_PASSPHRASE
+        sync: false
+      - key: TARGET_WALLETS
+        sync: false
+      - key: TOTAL_USDC
+        value: "15"
+      - key: MAX_PCT_PER_TRADE
+        value: "15"
+      - key: STOP_LOSS_PCT
+        value: "40"
+      - key: TAKE_PROFIT_PCT
+        value: "80"
+      - key: MEV_PROTECTION
+        value: "true"
+      - key: COPY_SCALE_FACTOR
+        value: "10"
+      - key: MONITOR_INTERVAL
+        value: "15"
