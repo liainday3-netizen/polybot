@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PolyBot — Polymarket Copy-Trading on Autopilot</title>
+    <meta name="description" content="Copy the smartest Polymarket traders automatically. $15 starting capital, MEV-protected, open source.">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root { --bg: #0a0b10; --card: #12141f; --border: #1e2035; --text: #eaeaf0; --muted: #8b8fa3; --accent: #7c5cfc; --accent2: #a78bfa; --green: #00d68f; --red: #ff4757; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
+        a { color: var(--accent2); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        /* Hero */
+        .hero { text-align: center; padding: 6rem 2rem 4rem; max-width: 800px; margin: 0 auto; position: relative; }
+        .hero::before { content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 600px; height: 400px; background: radial-gradient(ellipse, rgba(124,92,252,0.12) 0%, transparent 70%); pointer-events: none; }
+        .hero-badge { display: inline-block; background: rgba(124,92,252,0.12); border: 1px solid rgba(124,92,252,0.3); padding: 0.3rem 0.9rem; border-radius: 20px; font-size: 0.8rem; color: var(--accent2); margin-bottom: 1.5rem; font-weight: 500; }
+        .hero h1 { font-size: 3.2rem; font-weight: 800; line-height: 1.1; margin-bottom: 1.25rem; background: linear-gradient(135deg, var(--text) 0%, var(--accent2) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .hero p { font-size: 1.15rem; color: var(--muted); max-width: 600px; margin: 0 auto 2rem; }
+        .cta-group { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
+        .btn { padding: 0.75rem 1.75rem; border-radius: 8px; font-size: 0.95rem; font-weight: 600; cursor: pointer; border: none; transition: 0.2s; }
+        .btn-primary { background: var(--accent); color: white; }
+        .btn-primary:hover { background: #6a4de8; transform: translateY(-1px); }
+        .btn-secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
+        .btn-secondary:hover { border-color: var(--accent); }
+
+        /* Stats bar */
+        .stats-bar { display: flex; justify-content: center; gap: 3rem; padding: 2rem; margin: 2rem auto; max-width: 700px; flex-wrap: wrap; }
+        .stat { text-align: center; }
+        .stat-num { font-size: 1.8rem; font-weight: 800; color: var(--green); }
+        .stat-label { font-size: 0.8rem; color: var(--muted); margin-top: 0.25rem; }
+
+        /* Features */
+        .features { max-width: 1100px; margin: 4rem auto; padding: 0 2rem; }
+        .features h2 { text-align: center; font-size: 2rem; margin-bottom: 0.75rem; }
+        .features .subtitle { text-align: center; color: var(--muted); margin-bottom: 3rem; font-size: 1rem; }
+        .feature-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; }
+        .feature { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; transition: 0.2s; }
+        .feature:hover { border-color: var(--accent); transform: translateY(-2px); }
+        .feature-icon { font-size: 1.5rem; margin-bottom: 0.75rem; }
+        .feature h4 { font-size: 1rem; margin-bottom: 0.5rem; font-weight: 600; }
+        .feature p { font-size: 0.85rem; color: var(--muted); line-height: 1.5; }
+
+        /* How it works */
+        .how { max-width: 900px; margin: 5rem auto; padding: 0 2rem; }
+        .how h2 { text-align: center; font-size: 2rem; margin-bottom: 3rem; }
+        .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.5rem; }
+        .step { text-align: center; position: relative; }
+        .step-num { width: 36px; height: 36px; background: var(--accent); color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.9rem; margin: 0 auto 0.75rem; }
+        .step h4 { font-size: 0.9rem; margin-bottom: 0.4rem; }
+        .step p { font-size: 0.78rem; color: var(--muted); }
+
+        /* Pricing */
+        .pricing { max-width: 500px; margin: 5rem auto; padding: 0 2rem; text-align: center; }
+        .pricing h2 { font-size: 2rem; margin-bottom: 1rem; }
+        .price-card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 2.5rem; margin-top: 1.5rem; }
+        .price-amount { font-size: 3rem; font-weight: 800; }
+        .price-amount span { font-size: 1rem; color: var(--muted); font-weight: 400; }
+        .price-desc { color: var(--muted); margin: 0.75rem 0 1.5rem; font-size: 0.9rem; }
+        .price-list { text-align: left; list-style: none; margin-bottom: 1.5rem; }
+        .price-list li { padding: 0.4rem 0; font-size: 0.85rem; }
+        .price-list li::before { content: '✓'; color: var(--green); margin-right: 0.5rem; font-weight: 700; }
+
+        /* Terminal */
+        .terminal { max-width: 700px; margin: 4rem auto; padding: 0 2rem; }
+        .terminal-window { background: #0d0e14; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+        .terminal-bar { display: flex; gap: 6px; padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); }
+        .terminal-dot { width: 10px; height: 10px; border-radius: 50%; }
+        .terminal-dot:nth-child(1) { background: var(--red); }
+        .terminal-dot:nth-child(2) { background: var(--green); }
+        .terminal-dot:nth-child(3) { background: #ffa726; }
+        .terminal-body { padding: 1.25rem; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.8rem; line-height: 1.8; color: var(--muted); }
+        .terminal-body .cmd { color: var(--green); }
+        .terminal-body .comment { color: #555; }
+        .terminal-body .output { color: var(--text); }
+
+        /* Footer */
+        .footer { text-align: center; padding: 3rem 2rem; border-top: 1px solid var(--border); margin-top: 4rem; }
+        .footer p { color: var(--muted); font-size: 0.8rem; }
+
+        @media (max-width: 768px) {
+            .hero h1 { font-size: 2.2rem; }
+            .feature-grid { grid-template-columns: 1fr; }
+            .steps { grid-template-columns: 1fr 1fr; }
+            .stats-bar { gap: 1.5rem; }
+        }
+    </style>
+</head>
+<body>
+    <!-- Hero -->
+    <section class="hero">
+        <span class="hero-badge">🔮 Polymarket × Polygon × Automation</span>
+        <h1>Copy the Smartest Prediction Traders. Automatically.</h1>
+        <p>PolyBot mirrors top Polymarket traders' moves in real-time. $15 starting capital. MEV-protected. Zero experience needed.</p>
+        <div class="cta-group">
+            <a href="#quickstart" class="btn btn-primary">Get Started →</a>
+            <a href="https://github.com/youruser/polybot" class="btn btn-secondary">View on GitHub</a>
+        </div>
+    </section>
+
+    <!-- Stats -->
+    <div class="stats-bar">
+        <div class="stat"><div class="stat-num">$15</div><div class="stat-label">Starting Capital</div></div>
+        <div class="stat"><div class="stat-num">24/7</div><div class="stat-label">Always Running</div></div>
+        <div class="stat"><div class="stat-num">&lt;2s</div><div class="stat-label">Copy Latency</div></div>
+        <div class="stat"><div class="stat-num">0.8%</div><div class="stat-label">MEV Savings</div></div>
+    </div>
+
+    <!-- Features -->
+    <section class="features">
+        <h2>Built for Smart Money, Not Big Money</h2>
+        <p class="subtitle">Every feature designed to maximise edge with minimal capital</p>
+        <div class="feature-grid">
+            <div class="feature">
+                <div class="feature-icon">🎯</div>
+                <h4>Auto Copy-Trading</h4>
+                <p>Monitor top wallets and mirror their positions the instant they trade. Configurable delay & scale.</p>
+            </div>
+            <div class="feature">
+                <div class="feature-icon">🛡️</div>
+                <h4>MEV Protection</h4>
+                <p>Orders routed through Flashbots-style protection. No front-running, no sandwich attacks.</p>
+            </div>
+            <div class="feature">
+                <div class="feature-icon">📊</div>
+                <h4>Risk Management</h4>
+                <p>Stop-loss, take-profit, daily circuit breaker, and auto-scaling. Sleep peacefully.</p>
+            </div>
+            <div class="feature">
+                <div class="feature-icon">🔍</div>
+                <h4>Wallet Discovery</h4>
+                <p>Built-in leaderboard scanner ranks traders by PNL, win rate, and consistency. Find alpha.</p>
+            </div>
+            <div class="feature">
+                <div class="feature-icon">📄</div>
+                <h4>Paper Trading</h4>
+                <p>Simulate with $100-$1000 virtual capital. Test strategies risk-free before going live.</p>
+            </div>
+            <div class="feature">
+                <div class="feature-icon">⚡</div>
+                <h4>Live Dashboard</h4>
+                <p>Real-time P&L, positions, signals feed. Dark-mode UI built for traders, not tourists.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- How It Works -->
+    <section class="how">
+        <h2>4 Steps to Automated Trading</h2>
+        <div class="steps">
+            <div class="step">
+                <div class="step-num">1</div>
+                <h4>Fund Wallet</h4>
+                <p>Send $15 USDC + $10 POL to your Phantom wallet on Polygon</p>
+            </div>
+            <div class="step">
+                <div class="step-num">2</div>
+                <h4>Pick Targets</h4>
+                <p>Use the leaderboard scanner to find winning wallets to copy</p>
+            </div>
+            <div class="step">
+                <div class="step-num">3</div>
+                <h4>Configure</h4>
+                <p>Set risk limits, position sizing, and copy delay</p>
+            </div>
+            <div class="step">
+                <div class="step-num">4</div>
+                <h4>Deploy</h4>
+                <p>Launch on Render (free tier). Bot runs 24/7 while you sleep.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Terminal -->
+    <section class="terminal" id="quickstart">
+        <div class="terminal-window">
+            <div class="terminal-bar">
+                <div class="terminal-dot"></div><div class="terminal-dot"></div><div class="terminal-dot"></div>
+            </div>
+            <div class="terminal-body">
+                <div class="comment"># Quick Start — 5 minutes to live trading</div>
+                <div class="cmd">$ tar -xzf polymarket_bot.tar.gz && cd polymarket_bot</div>
+                <div class="cmd">$ pip install -r requirements.txt</div>
+                <div class="cmd">$ cp .env.example .env && nano .env</div>
+                <div class="comment"># Add your Phantom private key + wallet address</div>
+                <div class="cmd">$ python setup_credentials.py</div>
+                <div class="output">✅ API credentials generated!</div>
+                <div class="cmd">$ python set_allowances.py</div>
+                <div class="output">✅ Token allowances set! Wallet ready to trade.</div>
+                <div class="cmd">$ python main.py</div>
+                <div class="output">═══════════════════════════════════════════</div>
+                <div class="output">&nbsp; POLYMARKET COPY-TRADE BOT v1.0</div>
+                <div class="output">&nbsp; Capital: $15.00 | Targets: 3 wallets</div>
+                <div class="output">═══════════════════════════════════════════</div>
+                <div class="output">Connected to Polymarket CLOB API ✓</div>
+                <div class="output">Copy-trade loop started</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Pricing -->
+    <section class="pricing">
+        <h2>Free & Open Source</h2>
+        <div class="price-card">
+            <div class="price-amount">$0 <span>/ forever</span></div>
+            <p class="price-desc">You keep 100% of profits. No fees. No subscription.</p>
+            <ul class="price-list">
+                <li>Full source code (Python)</li>
+                <li>Both dashboards included</li>
+                <li>Unlimited target wallets</li>
+                <li>Paper & live trading modes</li>
+                <li>MEV protection built-in</li>
+                <li>Free Render deployment</li>
+            </ul>
+            <a href="#quickstart" class="btn btn-primary" style="width:100%;display:block;text-align:center;">Download & Start</a>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <p>PolyBot is open-source software. Trading involves risk — never risk more than you can afford to lose.</p>
+        <p style="margin-top:0.5rem;">Built with 🤖 for the Polymarket community</p>
+    </footer>
+</body>
+</html>
