@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PolyBot — Copy-Trading Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg: #0f1118; --card: #1a1d2e; --border: #2a2d3e;
+            --text: #e4e4e7; --muted: #71717a; --accent: #6366f1;
+            --green: #22c55e; --red: #ef4444; --orange: #f59e0b;
+        }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+        .header { display: flex; align-items: center; justify-content: space-between; padding: 1rem 2rem; border-bottom: 1px solid var(--border); }
+        .header h1 { font-size: 1.25rem; font-weight: 700; }
+        .header h1 span { color: var(--accent); }
+        .status { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .wallet-btn { background: var(--accent); color: white; border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-size: 0.85rem; font-weight: 500; }
+        .wallet-btn:hover { opacity: 0.9; }
+        .wallet-btn.connected { background: var(--green); }
+        .main { display: grid; grid-template-columns: 1fr 320px; gap: 1rem; padding: 1.5rem 2rem; max-width: 1400px; margin: 0 auto; }
+        .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; }
+        .card h3 { font-size: 0.8rem; text-transform: uppercase; color: var(--muted); letter-spacing: 0.05em; margin-bottom: 1rem; }
+        .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
+        .metric { text-align: center; }
+        .metric-value { font-size: 1.5rem; font-weight: 700; }
+        .metric-label { font-size: 0.75rem; color: var(--muted); margin-top: 0.25rem; }
+        .positive { color: var(--green); }
+        .negative { color: var(--red); }
+        .signals { display: flex; flex-direction: column; gap: 0.75rem; max-height: 400px; overflow-y: auto; }
+        .signal { background: rgba(99,102,241,0.05); border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem; }
+        .signal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+        .signal-market { font-size: 0.85rem; font-weight: 500; }
+        .signal-time { font-size: 0.7rem; color: var(--muted); }
+        .signal-details { display: flex; justify-content: space-between; align-items: center; }
+        .signal-price { font-size: 0.8rem; }
+        .signal-side { font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; font-weight: 600; }
+        .side-buy { background: rgba(34,197,94,0.15); color: var(--green); }
+        .side-sell { background: rgba(239,68,68,0.15); color: var(--red); }
+        .copy-btn { background: var(--accent); color: white; border: none; padding: 4px 10px; border-radius: 4px; font-size: 0.75rem; cursor: pointer; }
+        .copy-btn:hover { opacity: 0.85; }
+        .positions { width: 100%; }
+        .positions table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+        .positions th { text-align: left; color: var(--muted); font-weight: 500; padding: 0.5rem; border-bottom: 1px solid var(--border); }
+        .positions td { padding: 0.5rem; border-bottom: 1px solid var(--border); }
+        .controls { display: flex; gap: 0.5rem; margin-top: 1rem; }
+        .ctrl-btn { flex: 1; padding: 0.5rem; border: 1px solid var(--border); background: transparent; color: var(--text); border-radius: 6px; cursor: pointer; font-size: 0.8rem; }
+        .ctrl-btn:hover { border-color: var(--accent); }
+        .ctrl-btn.active { background: var(--accent); border-color: var(--accent); }
+        .mev-toggle { display: flex; align-items: center; gap: 0.5rem; margin-top: 1rem; font-size: 0.8rem; }
+        .toggle { width: 36px; height: 20px; background: var(--green); border-radius: 10px; position: relative; cursor: pointer; }
+        .toggle::after { content: ''; position: absolute; width: 16px; height: 16px; background: white; border-radius: 50%; top: 2px; right: 2px; transition: 0.2s; }
+        .toggle.off { background: var(--muted); }
+        .toggle.off::after { right: auto; left: 2px; }
+        .log { font-family: 'SF Mono', monospace; font-size: 0.7rem; max-height: 200px; overflow-y: auto; background: rgba(0,0,0,0.3); border-radius: 8px; padding: 0.75rem; margin-top: 1rem; }
+        .log-entry { padding: 2px 0; color: var(--muted); }
+        .log-entry.trade { color: var(--green); }
+        .log-entry.error { color: var(--red); }
+        @media (max-width: 768px) { .main { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🤖 <span>PolyBot</span> Copy-Trading</h1>
+        <div class="status">
+            <div class="status-dot" id="statusDot"></div>
+            <span id="statusText">Monitoring</span>
+        </div>
+        <button class="wallet-btn" id="walletBtn" onclick="connectWallet()">Connect Wallet</button>
+    </div>
+
+    <div class="main">
+        <div style="display:flex;flex-direction:column;gap:1rem;">
+            <!-- Portfolio Summary -->
+            <div class="card">
+                <h3>📊 Portfolio Summary</h3>
+                <div class="metrics">
+                    <div class="metric">
+                        <div class="metric-value positive" id="totalPnl">+$0.00</div>
+                        <div class="metric-label">Total PNL</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-value" id="roi">0.0%</div>
+                        <div class="metric-label">ROI</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-value" id="winRate">0%</div>
+                        <div class="metric-label">Win Rate</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-value" id="openPos">0</div>
+                        <div class="metric-label">Open Positions</div>
+                    </div>
+                </div>
+                <div class="controls">
+                    <button class="ctrl-btn" onclick="scaleDown()">−25%</button>
+                    <button class="ctrl-btn active" id="capitalDisplay">$15.00</button>
+                    <button class="ctrl-btn" onclick="scaleUp()">+25%</button>
+                </div>
+                <div class="mev-toggle">
+                    <div class="toggle" id="mevToggle" onclick="toggleMev()"></div>
+                    <span>MEV Protection</span>
+                </div>
+            </div>
+
+            <!-- Open Positions -->
+            <div class="card positions">
+                <h3>📍 Open Positions</h3>
+                <table>
+                    <thead><tr><th>Market</th><th>Side</th><th>Entry</th><th>Current</th><th>PNL</th><th></th></tr></thead>
+                    <tbody id="positionsTable">
+                        <tr><td colspan="6" style="text-align:center;color:var(--muted);padding:2rem;">No open positions</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Activity Log -->
+            <div class="card">
+                <h3>📋 Activity Log</h3>
+                <div class="log" id="activityLog">
+                    <div class="log-entry">[--:--:--] Waiting for wallet connection...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sidebar: Live Signals -->
+        <div style="display:flex;flex-direction:column;gap:1rem;">
+            <div class="card">
+                <h3>⚡ Live Signals</h3>
+                <div class="signals" id="signalsFeed">
+                    <div style="text-align:center;color:var(--muted);padding:2rem;font-size:0.85rem;">
+                        Connect wallet to see live signals
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>⚙️ Risk Settings</h3>
+                <div style="font-size:0.8rem;display:flex;flex-direction:column;gap:0.5rem;">
+                    <div style="display:flex;justify-content:space-between;"><span>Stop Loss</span><span>-40%</span></div>
+                    <div style="display:flex;justify-content:space-between;"><span>Take Profit</span><span>+80%</span></div>
+                    <div style="display:flex;justify-content:space-between;"><span>Max/Trade</span><span>$2.25</span></div>
+                    <div style="display:flex;justify-content:space-between;"><span>Daily Limit</span><span>$8.00</span></div>
+                    <div style="display:flex;justify-content:space-between;"><span>Max Positions</span><span>5</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // State
+        let walletConnected = false;
+        let walletAddress = '';
+        let capital = 15.0;
+        let mevEnabled = true;
+        let positions = [];
+        let signals = [];
+        let trades = [];
+
+        // Wallet Connection (WalletConnect v2 / Phantom)
+        async function connectWallet() {
+            const btn = document.getElementById('walletBtn');
+            if (walletConnected) { disconnectWallet(); return; }
+
+            try {
+                // Check for Phantom
+                if (window.phantom?.solana) {
+                    // Phantom is Solana-native but supports Polygon via WalletConnect
+                    log('Connecting via Phantom...');
+                }
+
+                // Try EVM provider (MetaMask/Phantom EVM)
+                if (window.ethereum) {
+                    const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+                    walletAddress = accounts[0];
+                    walletConnected = true;
+
+                    // Switch to Polygon
+                    try {
+                        await window.ethereum.request({
+                            method: 'wallet_switchEthereumChain',
+                            params: [{ chainId: '0x89' }] // Polygon
+                        });
+                    } catch (e) {
+                        if (e.code === 4902) {
+                            await window.ethereum.request({
+                                method: 'wallet_addEthereumChain',
+                                params: [{
+                                    chainId: '0x89',
+                                    chainName: 'Polygon Mainnet',
+                                    rpcUrls: ['https://polygon-rpc.com'],
+                                    nativeCurrency: { name: 'POL', symbol: 'POL', decimals: 18 }
+                                }]
+                            });
+                        }
+                    }
+
+                    btn.textContent = walletAddress.slice(0,6) + '...' + walletAddress.slice(-4);
+                    btn.classList.add('connected');
+                    log('✅ Wallet connected: ' + walletAddress.slice(0,10) + '...');
+                    startMonitoring();
+                } else {
+                    log('⚠️ No wallet detected. Install Phantom or MetaMask.');
+                    window.open('https://phantom.app', '_blank');
+                }
+            } catch (err) {
+                log('❌ Connection failed: ' + err.message, 'error');
+            }
+        }
+
+        function disconnectWallet() {
+            walletConnected = false;
+            walletAddress = '';
+            document.getElementById('walletBtn').textContent = 'Connect Wallet';
+            document.getElementById('walletBtn').classList.remove('connected');
+            log('Wallet disconnected');
+        }
+
+        // Monitoring
+        function startMonitoring() {
+            document.getElementById('statusText').textContent = 'Monitoring 3 wallets';
+            generateDemoSignals();
+            setInterval(generateDemoSignals, 30000);
+        }
+
+        // Demo signal generation (replace with real API in production)
+        function generateDemoSignals() {
+            const markets = [
+                'Will Fed cut rates in June?', 'Trump wins 2026 midterms?',
+                'BTC above $100K by July?', 'ETH above $5K by Q3?',
+                'Ukraine ceasefire by August?', 'Apple stock above $200?',
+                'US recession in 2026?', 'SpaceX Mars mission 2026?'
+            ];
+            const wallets = ['SharpeTrader', 'CalibrationGod', 'ElectionEdge'];
+
+            const market = markets[Math.floor(Math.random() * markets.length)];
+            const wallet = wallets[Math.floor(Math.random() * wallets.length)];
+            const side = Math.random() > 0.4 ? 'BUY' : 'SELL';
+            const price = (Math.random() * 0.6 + 0.2).toFixed(3);
+            const size = (Math.random() * 50 + 10).toFixed(0);
+
+            const signal = { market, wallet, side, price: parseFloat(price), size: parseFloat(size), time: new Date() };
+            signals.unshift(signal);
+            if (signals.length > 10) signals.pop();
+
+            renderSignals();
+            log(`Signal: ${wallet} → '${market.slice(0,30)}...' @ ${price}`);
+        }
+
+        function renderSignals() {
+            const feed = document.getElementById('signalsFeed');
+            feed.innerHTML = signals.map(s => `
+                <div class="signal">
+                    <div class="signal-header">
+                        <span class="signal-market">${s.market.slice(0,35)}</span>
+                        <span class="signal-time">${timeAgo(s.time)}</span>
+                    </div>
+                    <div class="signal-details">
+                        <span class="signal-side ${s.side === 'BUY' ? 'side-buy' : 'side-sell'}">${s.side}</span>
+                        <span class="signal-price">$${s.size} @ ${s.price.toFixed(3)}</span>
+                        <button class="copy-btn" onclick="copyTrade('${s.market}','${s.side}',${s.price},${s.size},'${s.wallet}')">Copy</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function copyTrade(market, side, price, targetSize, wallet) {
+            const ourSize = Math.min(targetSize * 0.10, capital * 0.15).toFixed(2);
+            log(`🚀 Placing order | $${ourSize} @ ${price}`);
+
+            // Simulate execution delay
+            await new Promise(r => setTimeout(r, 1500));
+
+            const pos = {
+                id: 'POS-' + Date.now(),
+                market, side, entry: price,
+                current: price, size: parseFloat(ourSize),
+                pnl: 0, wallet
+            };
+            positions.push(pos);
+            renderPositions();
+            log(`✅ Filled! $${ourSize} @ ${price} | ${market.slice(0,25)}...`, 'trade');
+
+            // Simulate price movement
+            simulatePosition(pos);
+        }
+
+        function simulatePosition(pos) {
+            const interval = setInterval(() => {
+                const change = (Math.random() - 0.45) * 0.02;
+                pos.current = Math.max(0.01, Math.min(0.99, pos.current + change));
+                pos.pnl = pos.side === 'BUY'
+                    ? (pos.current - pos.entry) * (pos.size / pos.entry)
+                    : (pos.entry - pos.current) * (pos.size / pos.entry);
+
+                // Check SL/TP
+                const pnlPct = (pos.pnl / pos.size) * 100;
+                if (pnlPct <= -40) {
+                    closePosition(pos.id, 'stopped');
+                    clearInterval(interval);
+                } else if (pnlPct >= 80) {
+                    closePosition(pos.id, 'profit_taken');
+                    clearInterval(interval);
+                }
+                renderPositions();
+            }, 5000);
+        }
+
+        function closePosition(id, reason) {
+            const idx = positions.findIndex(p => p.id === id);
+            if (idx === -1) return;
+            const pos = positions[idx];
+            const emoji = reason === 'profit_taken' ? '💰' : '⛔';
+            log(`${emoji} ${reason}: ${pos.market.slice(0,25)} PNL: $${pos.pnl.toFixed(2)}`, pos.pnl >= 0 ? 'trade' : 'error');
+            trades.push({ ...pos, reason });
+            positions.splice(idx, 1);
+            renderPositions();
+            updateMetrics();
+        }
+
+        function renderPositions() {
+            const tbody = document.getElementById('positionsTable');
+            if (positions.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:2rem;">No open positions</td></tr>';
+                return;
+            }
+            tbody.innerHTML = positions.map(p => `
+                <tr>
+                    <td>${p.market.slice(0,25)}</td>
+                    <td><span class="signal-side ${p.side==='BUY'?'side-buy':'side-sell'}">${p.side}</span></td>
+                    <td>${p.entry.toFixed(3)}</td>
+                    <td>${p.current.toFixed(3)}</td>
+                    <td class="${p.pnl>=0?'positive':'negative'}">${p.pnl>=0?'+':''}$${p.pnl.toFixed(2)}</td>
+                    <td><button class="copy-btn" onclick="closePosition('${p.id}','manual')" style="background:var(--red)">Close</button></td>
+                </tr>
+            `).join('');
+            updateMetrics();
+        }
+
+        function updateMetrics() {
+            const totalPnl = trades.reduce((s,t) => s + t.pnl, 0) + positions.reduce((s,p) => s + p.pnl, 0);
+            const wins = trades.filter(t => t.pnl > 0).length;
+            const winRate = trades.length > 0 ? (wins/trades.length*100).toFixed(0) : 0;
+            const roi = (totalPnl / capital * 100).toFixed(1);
+
+            document.getElementById('totalPnl').textContent = `${totalPnl>=0?'+':''}$${totalPnl.toFixed(2)}`;
+            document.getElementById('totalPnl').className = `metric-value ${totalPnl>=0?'positive':'negative'}`;
+            document.getElementById('roi').textContent = `${roi}%`;
+            document.getElementById('winRate').textContent = `${winRate}%`;
+            document.getElementById('openPos').textContent = positions.length;
+        }
+
+        // Controls
+        function scaleUp() { capital *= 1.25; document.getElementById('capitalDisplay').textContent = `$${capital.toFixed(2)}`; log(`📈 Capital scaled up: $${capital.toFixed(2)}`); }
+        function scaleDown() { capital *= 0.75; document.getElementById('capitalDisplay').textContent = `$${capital.toFixed(2)}`; log(`📉 Capital scaled down: $${capital.toFixed(2)}`); }
+        function toggleMev() {
+            mevEnabled = !mevEnabled;
+            document.getElementById('mevToggle').classList.toggle('off');
+            log(`MEV Protection: ${mevEnabled ? 'ON' : 'OFF'}`);
+        }
+
+        // Utility
+        function log(msg, type = '') {
+            const el = document.getElementById('activityLog');
+            const time = new Date().toLocaleTimeString('en-US', { hour12: false });
+            el.innerHTML += `<div class="log-entry ${type}">[${time}] ${msg}</div>`;
+            el.scrollTop = el.scrollHeight;
+        }
+
+        function timeAgo(date) {
+            const s = Math.floor((Date.now() - date) / 1000);
+            if (s < 60) return s + 's ago';
+            return Math.floor(s/60) + 'm ago';
+        }
+    </script>
+</body>
+</html>

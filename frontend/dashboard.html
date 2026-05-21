@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PolyBot Pro — Advanced Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root { --bg: #0a0b10; --card: #12141f; --border: #1f2234; --text: #e8e8ec; --muted: #6b7080; --accent: #7c5cfc; --green: #00d68f; --red: #ff4757; --orange: #ffa726; --blue: #42a5f5; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+        /* Header */
+        .header { display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1.5rem; border-bottom: 1px solid var(--border); backdrop-filter: blur(10px); position: sticky; top: 0; z-index: 100; background: rgba(10,11,16,0.95); }
+        .brand { display: flex; align-items: center; gap: 0.75rem; }
+        .brand h1 { font-size: 1.1rem; font-weight: 700; }
+        .brand h1 em { font-style: normal; color: var(--accent); }
+        .mode-toggle { display: flex; background: var(--card); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+        .mode-btn { padding: 0.4rem 1rem; font-size: 0.8rem; cursor: pointer; border: none; background: transparent; color: var(--muted); font-weight: 500; transition: 0.2s; }
+        .mode-btn.active { background: var(--accent); color: white; }
+        .mode-btn:hover:not(.active) { color: var(--text); }
+        .badge { font-size: 0.65rem; padding: 2px 8px; border-radius: 4px; font-weight: 600; margin-left: 0.5rem; }
+        .badge-live { background: rgba(0,214,143,0.15); color: var(--green); }
+        .badge-paper { background: rgba(255,167,38,0.15); color: var(--orange); }
+        .header-right { display: flex; align-items: center; gap: 1rem; }
+        .bot-status { font-size: 0.8rem; display: flex; align-items: center; gap: 0.4rem; }
+        .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: blink 2s infinite; }
+        @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.4} }
+        .connect-btn { background: var(--accent); color: white; border: none; padding: 0.4rem 0.9rem; border-radius: 6px; font-size: 0.8rem; cursor: pointer; font-weight: 500; }
+
+        /* Grid Layout */
+        .grid { display: grid; grid-template-columns: 1fr 1fr 280px; grid-template-rows: auto auto auto; gap: 1rem; padding: 1.25rem 1.5rem; max-width: 1500px; margin: 0 auto; }
+        .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1.1rem; }
+        .card-title { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 0.9rem; font-weight: 600; }
+
+        /* Portfolio Card */
+        .portfolio { grid-column: 1; }
+        .big-number { font-size: 2rem; font-weight: 800; line-height: 1; }
+        .sub-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-top: 1rem; }
+        .sub-metric .value { font-size: 1.1rem; font-weight: 700; }
+        .sub-metric .label { font-size: 0.7rem; color: var(--muted); margin-top: 2px; }
+
+        /* Chart Card */
+        .chart-card { grid-column: 2; }
+        .chart { width: 100%; height: 140px; position: relative; }
+        .chart canvas { width: 100%; height: 100%; }
+
+        /* Stats Card */
+        .stats { grid-column: 3; grid-row: 1 / 3; }
+        .stat-row { display: flex; justify-content: space-between; align-items: center; padding: 0.6rem 0; border-bottom: 1px solid var(--border); font-size: 0.82rem; }
+        .stat-row:last-child { border-bottom: none; }
+        .stat-label { color: var(--muted); }
+        .stat-value { font-weight: 600; }
+
+        /* Signals Card */
+        .signals-card { grid-column: 1 / 3; }
+        .signal-list { display: grid; gap: 0.6rem; max-height: 240px; overflow-y: auto; }
+        .sig { display: grid; grid-template-columns: 1fr auto auto auto; align-items: center; gap: 1rem; padding: 0.6rem 0.8rem; background: rgba(124,92,252,0.03); border: 1px solid var(--border); border-radius: 8px; }
+        .sig-market { font-size: 0.82rem; font-weight: 500; }
+        .sig-wallet { font-size: 0.7rem; color: var(--muted); }
+        .sig-price { font-size: 0.8rem; font-weight: 600; }
+        .sig-side { font-size: 0.7rem; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
+        .buy { background: rgba(0,214,143,0.12); color: var(--green); }
+        .sell { background: rgba(255,71,87,0.12); color: var(--red); }
+        .sim-btn { background: var(--accent); color: white; border: none; padding: 4px 12px; border-radius: 5px; font-size: 0.72rem; cursor: pointer; font-weight: 500; }
+        .sim-btn:hover { opacity: 0.85; }
+
+        /* Paper Capital */
+        .paper-card { display: none; }
+        .paper-card.visible { display: block; }
+        .slider-wrap { margin-top: 0.75rem; }
+        .slider-wrap input[type=range] { width: 100%; accent-color: var(--accent); }
+        .slider-labels { display: flex; justify-content: space-between; font-size: 0.7rem; color: var(--muted); margin-top: 4px; }
+        .paper-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-top: 1rem; }
+        .paper-stat .val { font-size: 1rem; font-weight: 700; }
+        .paper-stat .lbl { font-size: 0.68rem; color: var(--muted); }
+
+        /* Positions */
+        .positions-card { grid-column: 1 / 4; }
+        .pos-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+        .pos-table th { text-align: left; color: var(--muted); font-weight: 500; padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--border); font-size: 0.72rem; text-transform: uppercase; }
+        .pos-table td { padding: 0.55rem 0.6rem; border-bottom: 1px solid var(--border); }
+        .close-btn { background: var(--red); color: white; border: none; padding: 3px 8px; border-radius: 4px; font-size: 0.7rem; cursor: pointer; }
+
+        /* Recent Trades */
+        .trades-card { grid-column: 3; }
+        .trade-item { display: flex; justify-content: space-between; align-items: center; padding: 0.45rem 0; border-bottom: 1px solid var(--border); font-size: 0.78rem; }
+        .trade-item:last-child { border-bottom: none; }
+
+        /* Bot Control */
+        .bot-btn { width: 100%; padding: 0.6rem; border: none; border-radius: 8px; font-size: 0.85rem; font-weight: 600; cursor: pointer; margin-top: 0.75rem; }
+        .bot-btn.start { background: var(--green); color: #000; }
+        .bot-btn.stop { background: var(--red); color: white; }
+
+        .green { color: var(--green); } .red { color: var(--red); }
+        @media (max-width: 1024px) { .grid { grid-template-columns: 1fr 1fr; } .stats { grid-column: 1/3; grid-row: auto; } .positions-card { grid-column: 1/3; } }
+        @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } .stats, .positions-card, .signals-card { grid-column: 1; } }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="brand">
+            <h1>🤖 <em>PolyBot</em> Pro</h1>
+            <span class="badge badge-live" id="modeBadge">LIVE</span>
+        </div>
+        <div class="mode-toggle">
+            <button class="mode-btn active" id="liveBtn" onclick="setMode('live')">🔴 Live</button>
+            <button class="mode-btn" id="paperBtn" onclick="setMode('paper')">📄 Paper</button>
+        </div>
+        <div class="header-right">
+            <div class="bot-status"><div class="pulse" id="botPulse"></div><span id="botStatusText">Idle</span></div>
+            <button class="connect-btn" id="connectBtn" onclick="connectWallet()">Connect Wallet</button>
+        </div>
+    </div>
+
+    <div class="grid">
+        <!-- Portfolio Summary -->
+        <div class="card portfolio">
+            <div class="card-title">📊 Portfolio</div>
+            <div class="big-number green" id="bigPnl">$0.00</div>
+            <div class="sub-metrics">
+                <div class="sub-metric"><div class="value" id="mROI">0.0%</div><div class="label">ROI</div></div>
+                <div class="sub-metric"><div class="value" id="mWin">0%</div><div class="label">Win Rate</div></div>
+                <div class="sub-metric"><div class="value" id="mTrades">0</div><div class="label">Trades</div></div>
+                <div class="sub-metric"><div class="value" id="mOpen">0</div><div class="label">Open</div></div>
+            </div>
+            <button class="bot-btn start" id="botBtn" onclick="toggleBot()">▶ Start Bot</button>
+        </div>
+
+        <!-- 7-Day Chart -->
+        <div class="card chart-card">
+            <div class="card-title">📈 7-Day P&L</div>
+            <div class="chart"><canvas id="pnlChart"></canvas></div>
+        </div>
+
+        <!-- Stats Sidebar -->
+        <div class="card stats">
+            <div class="card-title">📋 Statistics</div>
+            <div class="stat-row"><span class="stat-label">Today's PNL</span><span class="stat-value green" id="sTodayPnl">$0.00</span></div>
+            <div class="stat-row"><span class="stat-label">Monthly PNL</span><span class="stat-value green" id="sMonthPnl">$0.00</span></div>
+            <div class="stat-row"><span class="stat-label">Total Trades</span><span class="stat-value" id="sTotalTrades">0</span></div>
+            <div class="stat-row"><span class="stat-label">Active Positions</span><span class="stat-value" id="sActive">0</span></div>
+            <div class="stat-row"><span class="stat-label">Capital Used</span><span class="stat-value" id="sCapUsed">$0.00</span></div>
+            <div class="stat-row"><span class="stat-label">Available</span><span class="stat-value" id="sAvailable">$15.00</span></div>
+            <div class="stat-row"><span class="stat-label">Daily Loss</span><span class="stat-value" id="sDailyLoss">$0 / $8</span></div>
+            <div class="stat-row"><span class="stat-label">MEV Saved</span><span class="stat-value green" id="sMev">$0.00</span></div>
+
+            <!-- Paper Trading Card (hidden in live mode) -->
+            <div class="paper-card" id="paperCard">
+                <div style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border);">
+                    <div class="card-title">💰 Paper Capital</div>
+                    <div class="slider-wrap">
+                        <input type="range" min="10" max="1000" value="100" id="paperSlider" oninput="updatePaperCapital(this.value)">
+                        <div class="slider-labels"><span>$10</span><span id="paperCapValue">$100</span><span>$1000</span></div>
+                    </div>
+                    <div class="paper-stats">
+                        <div class="paper-stat"><div class="val" id="pUsed">$0</div><div class="lbl">Used</div></div>
+                        <div class="paper-stat"><div class="val" id="pAvail">$100</div><div class="lbl">Available</div></div>
+                        <div class="paper-stat"><div class="val green" id="pPnl">$0.00</div><div class="lbl">Paper PNL</div></div>
+                        <div class="paper-stat"><div class="val" id="pTrades">0</div><div class="lbl">Trades</div></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Live Signals -->
+        <div class="card signals-card">
+            <div class="card-title">⚡ Live Signals</div>
+            <div class="signal-list" id="signalList">
+                <div style="text-align:center;color:var(--muted);padding:2rem;">Start the bot to see signals</div>
+            </div>
+        </div>
+
+        <!-- Open Positions -->
+        <div class="card positions-card">
+            <div class="card-title">📍 Open Positions</div>
+            <table class="pos-table">
+                <thead><tr><th>Market</th><th>Side</th><th>Size</th><th>Entry</th><th>Current</th><th>PNL ($)</th><th>PNL (%)</th><th></th></tr></thead>
+                <tbody id="posBody"><tr><td colspan="8" style="text-align:center;color:var(--muted);padding:1.5rem;">No positions yet</td></tr></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        // App State
+        const state = {
+            mode: 'live', // 'live' or 'paper'
+            botRunning: false,
+            walletConnected: false,
+            capital: 15,
+            paperCapital: 100,
+            positions: [],
+            closedTrades: [],
+            signals: [],
+            dailyPnl: 0,
+            mevSaved: 0,
+            chartData: [0, 0.5, -0.2, 1.1, 0.8, 1.5, 0.3]
+        };
+
+        // Mode toggle
+        function setMode(mode) {
+            state.mode = mode;
+            document.getElementById('liveBtn').classList.toggle('active', mode==='live');
+            document.getElementById('paperBtn').classList.toggle('active', mode==='paper');
+            const badge = document.getElementById('modeBadge');
+            badge.textContent = mode === 'live' ? 'LIVE' : 'SIMULATED';
+            badge.className = `badge ${mode==='live'?'badge-live':'badge-paper'}`;
+            document.getElementById('paperCard').classList.toggle('visible', mode==='paper');
+            const cap = mode === 'paper' ? state.paperCapital : 15;
+            document.getElementById('sAvailable').textContent = `$${cap.toFixed(2)}`;
+        }
+
+        // Wallet
+        async function connectWallet() {
+            if (state.mode === 'paper') {
+                state.walletConnected = true;
+                document.getElementById('connectBtn').textContent = 'Paper Mode';
+                document.getElementById('connectBtn').style.background = 'var(--orange)';
+                return;
+            }
+            if (window.ethereum) {
+                try {
+                    const accts = await window.ethereum.request({method:'eth_requestAccounts'});
+                    state.walletConnected = true;
+                    document.getElementById('connectBtn').textContent = accts[0].slice(0,6)+'...'+accts[0].slice(-4);
+                    document.getElementById('connectBtn').style.background = 'var(--green)';
+                } catch(e) { alert('Connection failed'); }
+            } else {
+                window.open('https://phantom.app','_blank');
+            }
+        }
+
+        // Bot control
+        let botInterval = null;
+        function toggleBot() {
+            state.botRunning = !state.botRunning;
+            const btn = document.getElementById('botBtn');
+            const pulse = document.getElementById('botPulse');
+            const txt = document.getElementById('botStatusText');
+            if (state.botRunning) {
+                btn.textContent = '⏹ Stop Bot'; btn.className = 'bot-btn stop';
+                pulse.style.background = 'var(--green)'; txt.textContent = 'Running';
+                botInterval = setInterval(generateSignal, 8000);
+                generateSignal();
+            } else {
+                btn.textContent = '▶ Start Bot'; btn.className = 'bot-btn start';
+                pulse.style.background = 'var(--muted)'; txt.textContent = 'Idle';
+                clearInterval(botInterval);
+            }
+        }
+
+        // Signal generation
+        const MARKETS = ['Will Fed cut rates in June?','Trump 2026 midterms win?','BTC above $100K July?','ETH above $5K Q3?','Ukraine ceasefire Aug?','Apple above $250?','US recession 2026?','SpaceX Mars 2026?','AI regulation bill passes?','Gold above $3000?'];
+        const WALLETS = ['SharpeTrader','CalibrationGod','ElectionEdge','CryptoOracle','PoliticsAlpha'];
+
+        function generateSignal() {
+            const sig = {
+                market: MARKETS[Math.floor(Math.random()*MARKETS.length)],
+                wallet: WALLETS[Math.floor(Math.random()*WALLETS.length)],
+                side: Math.random()>0.4?'BUY':'SELL',
+                price: +(Math.random()*0.6+0.2).toFixed(3),
+                size: +(Math.random()*80+10).toFixed(0),
+                time: Date.now()
+            };
+            state.signals.unshift(sig);
+            if (state.signals.length > 12) state.signals.pop();
+            renderSignals();
+        }
+
+        function renderSignals() {
+            const el = document.getElementById('signalList');
+            el.innerHTML = state.signals.map(s => `
+                <div class="sig">
+                    <div><div class="sig-market">${s.market}</div><div class="sig-wallet">${s.wallet} • ${timeAgo(s.time)}</div></div>
+                    <span class="sig-side ${s.side==='BUY'?'buy':'sell'}">${s.side}</span>
+                    <span class="sig-price">$${s.size} @ ${s.price}</span>
+                    <button class="sim-btn" onclick="executeTrade('${s.market}','${s.side}',${s.price},${s.size},'${s.wallet}')">${state.mode==='paper'?'Simulate':'Copy'}</button>
+                </div>
+            `).join('');
+        }
+
+        // Trade execution
+        function executeTrade(market, side, price, targetSize, wallet) {
+            const cap = state.mode === 'paper' ? state.paperCapital : state.capital;
+            const ourSize = Math.min(targetSize * 0.10, cap * 0.15);
+            if (state.positions.length >= 5) { alert('Max 5 positions!'); return; }
+
+            const pos = { id: 'P'+Date.now(), market, side, entry: price, current: price, size: +ourSize.toFixed(2), pnl: 0, pnlPct: 0, wallet, time: Date.now() };
+            state.positions.push(pos);
+            simulatePos(pos);
+            renderPositions();
+            updateStats();
+        }
+
+        function simulatePos(pos) {
+            pos._interval = setInterval(() => {
+                const drift = (Math.random()-0.44)*0.015;
+                pos.current = Math.max(0.01, Math.min(0.99, pos.current + drift));
+                const qty = pos.size / pos.entry;
+                pos.pnl = pos.side==='BUY' ? (pos.current-pos.entry)*qty : (pos.entry-pos.current)*qty;
+                pos.pnlPct = (pos.pnl/pos.size)*100;
+                if (pos.pnlPct <= -40) { closePos(pos.id,'stopped'); }
+                else if (pos.pnlPct >= 80) { closePos(pos.id,'profit_taken'); }
+                renderPositions(); updateStats();
+            }, 4000);
+        }
+
+        function closePos(id, reason) {
+            const idx = state.positions.findIndex(p=>p.id===id);
+            if (idx===-1) return;
+            const pos = state.positions[idx];
+            clearInterval(pos._interval);
+            state.closedTrades.push({...pos, reason, closedAt: Date.now()});
+            state.dailyPnl += pos.pnl;
+            state.mevSaved += pos.size * 0.008;
+            state.positions.splice(idx,1);
+            renderPositions(); updateStats(); updateChart();
+        }
+
+        function renderPositions() {
+            const tbody = document.getElementById('posBody');
+            if (!state.positions.length) { tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:1.5rem;">No positions</td></tr>'; return; }
+            tbody.innerHTML = state.positions.map(p => `<tr>
+                <td>${p.market.slice(0,28)}</td>
+                <td><span class="sig-side ${p.side==='BUY'?'buy':'sell'}">${p.side}</span></td>
+                <td>$${p.size.toFixed(2)}</td>
+                <td>${p.entry.toFixed(3)}</td>
+                <td>${p.current.toFixed(3)}</td>
+                <td class="${p.pnl>=0?'green':'red'}">${p.pnl>=0?'+':''}$${p.pnl.toFixed(2)}</td>
+                <td class="${p.pnlPct>=0?'green':'red'}">${p.pnlPct>=0?'+':''}${p.pnlPct.toFixed(1)}%</td>
+                <td><button class="close-btn" onclick="closePos('${p.id}','manual')">Close</button></td>
+            </tr>`).join('');
+        }
+
+        function updateStats() {
+            const totalPnl = state.closedTrades.reduce((s,t)=>s+t.pnl,0) + state.positions.reduce((s,p)=>s+p.pnl,0);
+            const wins = state.closedTrades.filter(t=>t.pnl>0).length;
+            const total = state.closedTrades.length;
+            const cap = state.mode==='paper' ? state.paperCapital : state.capital;
+            const used = state.positions.reduce((s,p)=>s+p.size,0);
+
+            document.getElementById('bigPnl').textContent = `${totalPnl>=0?'+':''}$${totalPnl.toFixed(2)}`;
+            document.getElementById('bigPnl').className = `big-number ${totalPnl>=0?'green':'red'}`;
+            document.getElementById('mROI').textContent = `${(totalPnl/cap*100).toFixed(1)}%`;
+            document.getElementById('mWin').textContent = total?`${(wins/total*100).toFixed(0)}%`:'0%';
+            document.getElementById('mTrades').textContent = total;
+            document.getElementById('mOpen').textContent = state.positions.length;
+            document.getElementById('sTodayPnl').textContent = `${state.dailyPnl>=0?'+':''}$${state.dailyPnl.toFixed(2)}`;
+            document.getElementById('sMonthPnl').textContent = `${totalPnl>=0?'+':''}$${totalPnl.toFixed(2)}`;
+            document.getElementById('sTotalTrades').textContent = total;
+            document.getElementById('sActive').textContent = state.positions.length;
+            document.getElementById('sCapUsed').textContent = `$${used.toFixed(2)}`;
+            document.getElementById('sAvailable').textContent = `$${(cap-used).toFixed(2)}`;
+            document.getElementById('sDailyLoss').textContent = `$${Math.abs(Math.min(0,state.dailyPnl)).toFixed(2)} / $8`;
+            document.getElementById('sMev').textContent = `$${state.mevSaved.toFixed(2)}`;
+
+            if (state.mode==='paper') {
+                document.getElementById('pUsed').textContent = `$${used.toFixed(2)}`;
+                document.getElementById('pAvail').textContent = `$${(state.paperCapital-used).toFixed(2)}`;
+                document.getElementById('pPnl').textContent = `${totalPnl>=0?'+':''}$${totalPnl.toFixed(2)}`;
+                document.getElementById('pTrades').textContent = total;
+            }
+        }
+
+        function updatePaperCapital(val) {
+            state.paperCapital = +val;
+            document.getElementById('paperCapValue').textContent = `$${val}`;
+            document.getElementById('pAvail').textContent = `$${val}`;
+            updateStats();
+        }
+
+        // Chart
+        function drawChart() {
+            const canvas = document.getElementById('pnlChart');
+            const ctx = canvas.getContext('2d');
+            canvas.width = canvas.offsetWidth * 2; canvas.height = canvas.offsetHeight * 2;
+            ctx.scale(2,2);
+            const w = canvas.offsetWidth, h = canvas.offsetHeight;
+            const data = state.chartData;
+            const max = Math.max(...data, 0.1); const min = Math.min(...data, -0.1);
+            const range = max - min || 1;
+
+            ctx.clearRect(0,0,w,h);
+            ctx.beginPath();
+            ctx.strokeStyle = '#7c5cfc'; ctx.lineWidth = 2;
+            data.forEach((v,i) => {
+                const x = (i/(data.length-1)) * w;
+                const y = h - ((v-min)/range) * (h-20) - 10;
+                i===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+            });
+            ctx.stroke();
+
+            // Fill gradient
+            ctx.lineTo(w, h); ctx.lineTo(0, h); ctx.closePath();
+            const grad = ctx.createLinearGradient(0,0,0,h);
+            grad.addColorStop(0,'rgba(124,92,252,0.2)'); grad.addColorStop(1,'rgba(124,92,252,0)');
+            ctx.fillStyle = grad; ctx.fill();
+
+            // Labels
+            ctx.fillStyle = '#6b7080'; ctx.font = '10px sans-serif';
+            const days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+            days.forEach((d,i) => { ctx.fillText(d, (i/6)*w, h-2); });
+        }
+
+        function updateChart() {
+            state.chartData.shift();
+            state.chartData.push(state.dailyPnl);
+            drawChart();
+        }
+
+        // Utils
+        function timeAgo(ts) { const s=Math.floor((Date.now()-ts)/1000); return s<60?s+'s':Math.floor(s/60)+'m'; }
+
+        // Init
+        window.addEventListener('load', () => { drawChart(); });
+        window.addEventListener('resize', drawChart);
+    </script>
+</body>
+</html>
