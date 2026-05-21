@@ -1,0 +1,33 @@
+# Byte-compiled
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment
+.env
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Data
+positions.json
+trade_journal.csv
+
+# Build
+dist/
+build/
+*.egg-info/
