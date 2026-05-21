@@ -5,6 +5,7 @@
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy)
+[![GitHub](https://img.shields.io/badge/GitHub-liainday3--netizen%2Fpolybot-181717?logo=github)](https://github.com/liainday3-netizen/polybot)
 
 ---
 
