@@ -1,8 +1,8 @@
-# Render deployment — Background Worker (24/7 bot)
+# Render deployment — Web Service (free tier compatible)
 # Deploy: connect your GitHub repo, Render auto-detects this file.
 
 services:
-  - type: worker
+  - type: web
     name: polybot
     runtime: python
     plan: free
@@ -35,3 +35,5 @@ services:
         value: "10"
       - key: MONITOR_INTERVAL
         value: "15"
+      - key: PORT
+        value: "10000"
