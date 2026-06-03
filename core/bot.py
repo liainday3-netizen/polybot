@@ -1,6 +1,7 @@
 """
 POLYBOT — Main Trading Bot Orchestrator
 Monitors target wallets, detects signals, and executes copy-trades.
+Also runs an autonomous market scanner when AUTO_TRADE_ENABLED=true.
 """
 import asyncio
 import time
@@ -13,6 +14,7 @@ from core.polymarket_client import PolymarketClient
 from core.risk_manager import RiskManager
 from core.position_manager import PositionManager
 from utils.logger import BotLogger
+from strategies.auto_trader import AutoTrader
 
 
 class PolyBot:
@@ -23,6 +25,7 @@ class PolyBot:
         self.risk = RiskManager()
         self.positions = PositionManager()
         self.logger = BotLogger()
+        self.auto_trader = AutoTrader(self.client, self.logger)
         self.running = False
         self.last_seen: Dict[str, int] = {}  # wallet -> last trade timestamp
 
@@ -51,13 +54,23 @@ class PolyBot:
         self.logger.info(f"Monitoring {len(config.TARGET_WALLETS)} target wallet(s)")
         self.logger.info(f"Capital: ${config.TOTAL_USDC} USDC | Max/trade: ${config.max_per_trade:.2f}")
         self.logger.info(f"MEV Protection: {'ON' if config.MEV_PROTECTION else 'OFF'}")
+        if config.AUTO_TRADE_ENABLED:
+            self.logger.info(
+                f"Auto-Trade: ON | scan every {config.AUTO_TRADE_INTERVAL}s | "
+                f"max {config.AUTO_TRADE_MAX_DAILY}/day | min score {config.AUTO_TRADE_MIN_SCORE}"
+            )
+
+        # Build coroutine list
+        loops = [
+            self._copy_trade_loop(),
+            self._position_monitor_loop(),
+        ]
+        if config.AUTO_TRADE_ENABLED:
+            loops.append(self._auto_trade_loop())
 
         # Start main loops
         try:
-            await asyncio.gather(
-                self._copy_trade_loop(),
-                self._position_monitor_loop()
-            )
+            await asyncio.gather(*loops)
         except asyncio.CancelledError:
             pass
         finally:
@@ -73,14 +86,18 @@ class PolyBot:
     def _print_banner(self):
         """Print startup banner."""
         print("═" * 50)
-        print("  POLYMARKET COPY-TRADE BOT  v1.0")
+        print("  POLYMARKET COPY-TRADE BOT  v1.1")
         print(f"  Capital: ${config.TOTAL_USDC} USDC | Gas reserve: ${config.POL_RESERVE} POL")
+        if config.AUTO_TRADE_ENABLED:
+            print("  Auto-Trade: ENABLED")
         print("═" * 50)
         print()
         print(f"Bot started | Capital: ${config.TOTAL_USDC} USDC | Targets: {len(config.TARGET_WALLETS)} wallets")
         print("Connected to Polymarket CLOB API ✓")
         print("Copy-trade loop started")
         print("Position monitor started")
+        if config.AUTO_TRADE_ENABLED:
+            print("Auto-trade loop started ✓")
         print()
 
     async def _copy_trade_loop(self):
@@ -173,6 +190,75 @@ class PolyBot:
             )
         else:
             self.logger.error(f"Order failed for {market}")
+
+    async def _auto_trade_loop(self):
+        """
+        Autonomous trading loop: scan markets on a timer and
+        execute independent trades based on momentum/liquidity signals.
+        Runs concurrently alongside copy-trading.
+        """
+        # First scan runs after one full interval so price history can build
+        self.logger.info(
+            f"[AutoTrader] Warming up — first scan in {config.AUTO_TRADE_INTERVAL}s"
+        )
+        await asyncio.sleep(config.AUTO_TRADE_INTERVAL)
+
+        while self.running:
+            try:
+                signal_found = await self.auto_trader.scan()
+
+                if signal_found:
+                    # Validate through shared risk manager
+                    is_valid, reason = self.risk.validate_trade(
+                        size_usdc=config.max_per_trade,
+                        price=signal_found.price,
+                        open_positions=self.positions.open_count
+                    )
+
+                    if not is_valid:
+                        self.logger.warning(
+                            f"[AutoTrader] Signal rejected by risk: {reason}"
+                        )
+                    else:
+                        self.logger.info(
+                            f"[AutoTrader] 🤖 Executing auto-trade: "
+                            f"{signal_found.market_name[:40]} | "
+                            f"{signal_found.side} ${config.max_per_trade:.2f} "
+                            f"@ {signal_found.price:.3f} (score={signal_found.score})"
+                        )
+
+                        result = await self.client.place_order(
+                            token_id=signal_found.token_id,
+                            side=signal_found.side,
+                            price=signal_found.price,
+                            size=config.max_per_trade,
+                        )
+
+                        if result:
+                            order_id = result.get("id", result.get("orderID", ""))
+                            self.logger.trade_executed(
+                                config.max_per_trade, signal_found.price, order_id
+                            )
+                            self.positions.open_position(
+                                market=signal_found.market_name,
+                                token_id=signal_found.token_id,
+                                side=signal_found.side,
+                                entry_price=signal_found.price,
+                                size_usdc=config.max_per_trade,
+                                source_wallet="auto_trader",
+                                order_id=order_id,
+                            )
+                            self.auto_trader.record_trade()
+                        else:
+                            self.logger.error(
+                                f"[AutoTrader] Order failed for {signal_found.market_name}"
+                            )
+
+                await asyncio.sleep(config.AUTO_TRADE_INTERVAL)
+
+            except Exception as e:
+                self.logger.error(f"[AutoTrader] Loop error: {e}")
+                await asyncio.sleep(30)
 
     async def _position_monitor_loop(self):
         """Monitor open positions for stop-loss and take-profit exits."""

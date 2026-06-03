@@ -51,6 +51,12 @@ class Config:
     AUTO_SCALE_UP_PCT: float = float(os.getenv('AUTO_SCALE_UP_PCT', '15'))
     AUTO_SCALE_WINS_REQUIRED: int = int(os.getenv('AUTO_SCALE_WINS_REQUIRED', '2'))
 
+    # Auto-Trade (autonomous market scanner)
+    AUTO_TRADE_ENABLED: bool = os.getenv('AUTO_TRADE_ENABLED', 'false').lower() == 'true'
+    AUTO_TRADE_INTERVAL: int = int(os.getenv('AUTO_TRADE_INTERVAL', '300'))   # seconds between scans
+    AUTO_TRADE_MAX_DAILY: int = int(os.getenv('AUTO_TRADE_MAX_DAILY', '3'))   # max independent trades/day
+    AUTO_TRADE_MIN_SCORE: float = float(os.getenv('AUTO_TRADE_MIN_SCORE', '65'))  # min signal score (0-100)
+
     # MEV Protection
     MEV_PROTECTION: bool = os.getenv('MEV_PROTECTION', 'true').lower() == 'true'
     PRIVATE_RPC: str = os.getenv('PRIVATE_RPC', 'https://rpc-mainnet.private.polygon.technology')
