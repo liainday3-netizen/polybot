@@ -414,5 +414,103 @@
         window.addEventListener('load', () => { drawChart(); });
         window.addEventListener('resize', drawChart);
     </script>
+
+    <!-- Capital Projection Section -->
+    <style>
+        .proj-section{max-width:1500px;margin:0 auto 2rem;padding:0 1.5rem}
+        .proj-card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:1.25rem}
+        .proj-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem}
+        .proj-title{font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600}
+        .proj-legend{display:flex;gap:1.25rem}
+        .proj-legend-item{display:flex;align-items:center;gap:.35rem;font-size:.75rem;color:var(--muted)}
+        .proj-dot{width:10px;height:10px;border-radius:50%}
+        #projCanvas{width:100%;height:220px;display:block}
+        .proj-milestones{display:grid;grid-template-columns:repeat(3,1fr);gap:.75rem;margin-top:1rem}
+        .proj-milestone{background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:8px;padding:.75rem;text-align:center}
+        .proj-ms-label{font-size:.65rem;text-transform:uppercase;color:var(--muted);margin-bottom:.4rem;letter-spacing:.05em}
+        .proj-ms-row{display:flex;justify-content:space-around;margin-top:.3rem}
+        .proj-ms-val{font-size:.8rem;font-weight:700}
+        .proj-ms-sub{font-size:.6rem;color:var(--muted);margin-top:1px}
+        .proj-start{font-size:.72rem;color:var(--muted);margin-top:.6rem;text-align:right}
+    </style>
+    <div class="proj-section">
+      <div class="proj-card">
+        <div class="proj-header">
+          <span class="proj-title">&#128200; Capital Projection (12 months)</span>
+          <div class="proj-legend">
+            <div class="proj-legend-item"><div class="proj-dot" style="background:#42a5f5"></div>Conservative 20%/yr</div>
+            <div class="proj-legend-item"><div class="proj-dot" style="background:#7c5cfc"></div>Base 40%/yr</div>
+            <div class="proj-legend-item"><div class="proj-dot" style="background:#00d68f"></div>Optimistic 70%/yr</div>
+          </div>
+        </div>
+        <canvas id="projCanvas"></canvas>
+        <div class="proj-milestones">
+          <div class="proj-milestone"><div class="proj-ms-label">2x your money</div><div class="proj-ms-row" id="msDouble">&#8212;</div></div>
+          <div class="proj-milestone"><div class="proj-ms-label">3x your money</div><div class="proj-ms-row" id="msTriple">&#8212;</div></div>
+          <div class="proj-milestone"><div class="proj-ms-label">10x your money</div><div class="proj-ms-row" id="msTenX">&#8212;</div></div>
+        </div>
+        <div class="proj-start" id="projStartLabel"></div>
+      </div>
+    </div>
+    <script>
+    (function(){
+        function drawProjection(data){
+            var canvas=document.getElementById('projCanvas');
+            var dpr=window.devicePixelRatio||1;
+            var W=canvas.offsetWidth,H=canvas.offsetHeight;
+            canvas.width=W*dpr;canvas.height=H*dpr;
+            var ctx=canvas.getContext('2d');ctx.scale(dpr,dpr);
+            var scenarios=Object.values(data.scenarios);
+            var allVals=scenarios.flatMap(function(s){return s.values});
+            var minV=Math.min.apply(null,allVals),maxV=Math.max.apply(null,allVals);
+            var range=maxV-minV||1;
+            var pad={top:20,bottom:28,left:52,right:20};
+            var cw=W-pad.left-pad.right,ch=H-pad.top-pad.bottom;
+            var toX=function(i){return pad.left+(i/(data.labels.length-1))*cw};
+            var toY=function(v){return pad.top+ch-((v-minV)/range)*ch};
+            ctx.strokeStyle='rgba(255,255,255,0.05)';ctx.lineWidth=1;
+            for(var i=0;i<=4;i++){
+                var y=pad.top+(ch/4)*i;
+                ctx.beginPath();ctx.moveTo(pad.left,y);ctx.lineTo(pad.left+cw,y);ctx.stroke();
+                var val=maxV-((maxV-minV)/4)*i;
+                ctx.fillStyle='#6b7080';ctx.font='10px sans-serif';ctx.textAlign='right';
+                ctx.fillText('$'+val.toFixed(1),pad.left-4,y+4);
+            }
+            ctx.fillStyle='#6b7080';ctx.font='10px sans-serif';ctx.textAlign='center';
+            data.labels.forEach(function(lbl,i){
+                if(i%3===0||i===data.labels.length-1)ctx.fillText(lbl,toX(i),H-pad.bottom+14);
+            });
+            scenarios.forEach(function(s){
+                ctx.beginPath();ctx.strokeStyle=s.color;ctx.lineWidth=2.5;
+                s.values.forEach(function(v,i){var x=toX(i),y=toY(v);i===0?ctx.moveTo(x,y):ctx.lineTo(x,y)});
+                ctx.stroke();
+                var last=s.values[s.values.length-1];
+                ctx.fillStyle=s.color;ctx.font='bold 10px sans-serif';ctx.textAlign='left';
+                ctx.fillText('$'+last.toFixed(2),toX(s.values.length-1)+4,toY(last)+4);
+            });
+        }
+        function renderMilestones(data){
+            var colors={conservative:'#42a5f5',base:'#7c5cfc',optimistic:'#00d68f'};
+            var labels={conservative:'Cons.',base:'Base',optimistic:'Opt.'};
+            [['double','msDouble'],['triple','msTriple'],['ten_x','msTenX']].forEach(function(pair){
+                var ms=pair[0],elId=pair[1];
+                var el=document.getElementById(elId);
+                var html=Object.entries(data.milestones[ms]).map(function(e){
+                    var k=e[0],v=e[1];
+                    return '<div style="text-align:center"><div class="proj-ms-val" style="color:'+colors[k]+'">'+(v===null?'36m+':'M'+v)+'</div><div class="proj-ms-sub">'+labels[k]+'</div></div>';
+                }).join('');
+                el.innerHTML=html;
+            });
+            document.getElementById('projStartLabel').textContent='Starting capital: $'+data.start_capital.toFixed(2)+' USDC';
+        }
+        function loadProjection(){
+            fetch('/api/projection?months=12').then(function(r){return r.json()}).then(function(data){
+                drawProjection(data);renderMilestones(data);
+            }).catch(function(e){console.warn('Projection unavailable:',e)});
+        }
+        window.addEventListener('load',loadProjection);
+        window.addEventListener('resize',loadProjection);
+    })();
+    </script>
 </body>
 </html>
