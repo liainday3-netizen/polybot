@@ -16,9 +16,19 @@ from core.config import config
 FRONTEND_DIR = Path(__file__).parent / "frontend"
 
 
+# Track server start time for uptime
+_START_TIME = __import__('time').time()
+
+
 async def health_check(request):
-    """Simple health-check endpoint for Render."""
-    return web.Response(text="OK", status=200)
+    """JSON health check — returns bot state for monitoring tools."""
+    from time import time as _t
+    return web.json_response({
+        "status": "ok",
+        "uptime_seconds": int(_t() - _START_TIME),
+        "version": "1.2",
+        "auto_trade": True,
+    })
 
 
 async def serve_dashboard(request):
@@ -50,6 +60,45 @@ async def api_projection(request):
     return web.json_response(data)
 
 
+async def api_performance(request):
+    """Return live trade performance stats from the trade journal."""
+    import csv
+    from pathlib import Path
+    trades_file = Path(__file__).parent / "logs" / "trades.csv"
+    trades = []
+    if trades_file.exists():
+        try:
+            with open(trades_file, newline='') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    trades.append({
+                        "market": row.get("market", "")[:50],
+                        "side": row.get("side", ""),
+                        "pnl": float(row.get("pnl", 0)),
+                        "pnl_pct": float(row.get("pnl_pct", 0)),
+                        "reason": row.get("reason", ""),
+                        "duration_minutes": int(row.get("duration_minutes", 0)),
+                        "source": row.get("source_wallet", "")[:12],
+                    })
+        except Exception as e:
+            pass
+    total = len(trades)
+    wins = sum(1 for t in trades if t["pnl"] > 0)
+    realized_pnl = round(sum(t["pnl"] for t in trades), 4)
+    win_rate = round((wins / total * 100) if total > 0 else 0, 1)
+    best = max((t["pnl"] for t in trades), default=0)
+    worst = min((t["pnl"] for t in trades), default=0)
+    recent = trades[-10:][::-1]   # last 10, newest first
+    return web.json_response({
+        "total_trades": total,
+        "win_rate": win_rate,
+        "realized_pnl": realized_pnl,
+        "best_trade": round(best, 4),
+        "worst_trade": round(worst, 4),
+        "recent_trades": recent,
+    })
+
+
 async def run_server():
     """Run a lightweight HTTP server for health checks and dashboard."""
     app = web.Application()
@@ -57,6 +106,7 @@ async def run_server():
     app.router.add_get("/dashboard", serve_dashboard)
     app.router.add_get("/", serve_index)
     app.router.add_get("/api/projection", api_projection)
+    app.router.add_get("/api/performance", api_performance)
     port = int(os.environ.get("PORT", 10000))
     runner = web.AppRunner(app)
     await runner.setup()
