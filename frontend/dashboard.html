@@ -341,6 +341,7 @@
                 const txt   = document.getElementById('botStatusText');
                 if (pulse) pulse.style.background = running ? 'var(--green)' : 'var(--muted)';
                 if (txt)   txt.textContent = running ? 'Running' : 'Stopped';
+                state.botRunning = running; _updateBotBtn();
 
                 // Stats sidebar
                 setEl('sTodayPnl',   (d.daily_pnl >= 0 ? '+' : '') + '$' + parseFloat(d.daily_pnl).toFixed(4),
@@ -466,7 +467,30 @@
         window.addEventListener('load', startLivePolling);
         window.addEventListener('resize', loadPnlHistory);
 
-        function toggleBot() { /* controlled by bot server */ }
+        async function toggleBot() {
+            const running = state.botRunning;
+            const endpoint = running ? '/api/stop' : '/api/start';
+            try {
+                const r = await fetch(endpoint, { method: 'POST' });
+                const d = await r.json();
+                if (d.ok !== false) {
+                    state.botRunning = !running;
+                    _updateBotBtn();
+                }
+            } catch(e) { console.error('toggleBot error:', e); }
+        }
+
+        function _updateBotBtn() {
+            const btn = document.getElementById('botBtn');
+            if (!btn) return;
+            if (state.botRunning) {
+                btn.textContent = '⏹ Stop Bot';
+                btn.className = 'bot-btn stop';
+            } else {
+                btn.textContent = '▶ Start Bot';
+                btn.className = 'bot-btn start';
+            }
+        }
 
         // Signal generation
         const MARKETS = ['Will Fed cut rates in June?','Trump 2026 midterms win?','BTC above $100K July?','ETH above $5K Q3?','Ukraine ceasefire Aug?','Apple above $250?','US recession 2026?','SpaceX Mars 2026?','AI regulation bill passes?','Gold above $3000?'];
