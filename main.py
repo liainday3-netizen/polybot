@@ -95,9 +95,9 @@ async def api_portfolio(request):
     win_rate      = round((wins / total_trades * 100) if total_trades > 0 else 0, 1)
 
     # ── daily P&L from risk manager ───────────────────────────────────
-    daily_pnl   = round(_bot.risk.daily_pnl, 4) if _bot else 0.0
-    daily_limit = config.DAILY_LOSS_LIMIT
-    scale       = round(_bot.risk.current_scale, 2) if _bot else 1.0
+    daily_pnl    = round(_bot.risk.daily_pnl, 4) if _bot else 0.0
+    daily_limit  = config.DAILY_LOSS_LIMIT
+    scale        = round(_bot.risk.current_scale, 2) if _bot else 1.0
     circuit_breaker = bool(_bot and _bot.risk.daily_pnl <= -daily_limit)
 
     # ── open positions from position manager ──────────────────────────
@@ -243,6 +243,30 @@ async def api_performance(request):
     })
 
 
+
+# ─── Bot control API ──────────────────────────────────────────────────────
+
+async def api_start_bot(request):
+    """Start / resume the bot loops."""
+    global _bot
+    if _bot is None:
+        return web.json_response({"ok": False, "error": "bot not initialised"}, status=500)
+    if _bot.running:
+        return web.json_response({"ok": True, "status": "already_running"})
+    _bot.running = True
+    asyncio.ensure_future(_bot.start())
+    return web.json_response({"ok": True, "status": "started"})
+
+
+async def api_stop_bot(request):
+    """Pause the bot loops."""
+    global _bot
+    if _bot is None:
+        return web.json_response({"ok": False, "error": "bot not initialised"}, status=500)
+    _bot.running = False
+    return web.json_response({"ok": True, "status": "stopped"})
+
+
 # ─── Server + Bot runners ──────────────────────────────────────────────────
 
 async def run_server():
@@ -256,6 +280,8 @@ async def run_server():
     app.router.add_get("/api/pnl_history", api_pnl_history)
     app.router.add_get("/api/attribution", api_attribution)
     app.router.add_get("/api/performance", api_performance)
+    app.router.add_post("/api/start",       api_start_bot)
+    app.router.add_post("/api/stop",        api_stop_bot)
 
     port = int(os.environ.get("PORT", 10000))
     runner = web.AppRunner(app)
