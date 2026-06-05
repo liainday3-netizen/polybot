@@ -10,6 +10,8 @@ from pathlib import Path
 from aiohttp import web
 
 from core.bot import PolyBot
+from strategies.capital_projection import project as _project_capital
+from core.config import config
 
 FRONTEND_DIR = Path(__file__).parent / "frontend"
 
@@ -35,12 +37,26 @@ async def serve_index(request):
     return web.Response(text="OK", status=200)
 
 
+async def api_projection(request):
+    """Return capital projection JSON for the dashboard."""
+    try:
+        start = float(getattr(config, "TOTAL_USDC", 15.0))
+    except Exception:
+        start = 15.0
+    months = int(request.rel_url.query.get("months", 12))
+    months = min(max(months, 3), 36)
+    from strategies.capital_projection import project as _cp
+    data = _cp(start_capital=start, months=months)
+    return web.json_response(data)
+
+
 async def run_server():
     """Run a lightweight HTTP server for health checks and dashboard."""
     app = web.Application()
     app.router.add_get("/health", health_check)
     app.router.add_get("/dashboard", serve_dashboard)
     app.router.add_get("/", serve_index)
+    app.router.add_get("/api/projection", api_projection)
     port = int(os.environ.get("PORT", 10000))
     runner = web.AppRunner(app)
     await runner.setup()
