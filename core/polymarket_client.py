@@ -1,210 +1,234 @@
 """
 POLYBOT — Polymarket CLOB API Client
-Handles all interactions with Polymarket's order book.
+Uses py-clob-client for authenticated order placement (proper EIP-712 signing).
+Uses aiohttp for public read endpoints (markets, order book, prices).
 """
-import time
-import json
-import hmac
-import hashlib
-import base64
 import asyncio
-from typing import Optional, Dict, List, Any
+from functools import partial
+from typing import Optional, Dict, List
 
 import aiohttp
-from eth_account import Account
-from eth_account.messages import encode_defunct
-from web3 import Web3
 
 from core.config import config
+
+
+# ── py-clob-client singleton (sync; lazy-init after config is ready) ─────
+
+_clob_client = None
+
+
+def _get_clob():
+    """Return (or create) the py-clob-client singleton."""
+    global _clob_client
+    if _clob_client is None:
+        from py_clob_client.client import ClobClient
+        from py_clob_client.clob_types import ApiCreds
+        from py_clob_client.constants import POLYGON
+
+        creds = ApiCreds(
+            api_key=config.API_KEY,
+            api_secret=config.API_SECRET,
+            api_passphrase=config.API_PASSPHRASE,
+        )
+        _clob_client = ClobClient(
+            host=config.CLOB_API_URL.rstrip("/"),
+            chain_id=POLYGON,
+            key=config.PRIVATE_KEY,
+            funder=config.WALLET_ADDRESS,
+            signature_type=0,   # EOA (externally owned account)
+            creds=creds,
+        )
+    return _clob_client
 
 
 class PolymarketClient:
     """Async client for Polymarket CLOB API."""
 
+    # Gamma API gives richer market metadata than CLOB /markets
+    GAMMA_URL = "https://gamma-api.polymarket.com"
+
     def __init__(self):
-        self.base_url = config.CLOB_API_URL
-        self.api_key = config.API_KEY
-        self.api_secret = config.API_SECRET
-        self.api_passphrase = config.API_PASSPHRASE
+        self.base_url = config.CLOB_API_URL.rstrip("/")
         self.session: Optional[aiohttp.ClientSession] = None
-        self.w3 = Web3(Web3.HTTPProvider(config.rpc_url))
-        self.account = Account.from_key(config.PRIVATE_KEY) if config.PRIVATE_KEY and config.PRIVATE_KEY != '0xYOUR_PRIVATE_KEY_HERE' else None
 
     async def connect(self):
         """Initialize HTTP session."""
-        self.session = aiohttp.ClientSession(
-            headers=self._auth_headers()
-        )
+        self.session = aiohttp.ClientSession()
 
     async def disconnect(self):
         """Close HTTP session."""
         if self.session:
             await self.session.close()
+            self.session = None
 
-    def _auth_headers(self) -> Dict[str, str]:
-        """Generate authentication headers for CLOB API."""
-        timestamp = str(int(time.time()))
-        message = timestamp + "GET" + "/auth/api-key"
+    # ── Public / read endpoints (no auth required) ────────────────────────
 
-        if self.api_secret:
-            signature = hmac.new(
-                base64.b64decode(self.api_secret),
-                message.encode('utf-8'),
-                hashlib.sha256
-            ).digest()
-            sig_b64 = base64.b64encode(signature).decode('utf-8')
-        else:
-            sig_b64 = ""
-
-        return {
-            "POLY_API_KEY": self.api_key,
-            "POLY_SIGNATURE": sig_b64,
-            "POLY_TIMESTAMP": timestamp,
-            "POLY_PASSPHRASE": self.api_passphrase,
-            "Content-Type": "application/json"
+    async def get_markets(self, limit: int = 100, active_only: bool = True) -> List[Dict]:
+        """Fetch active markets. Tries Gamma API first (richer data), falls back to CLOB."""
+        params = {
+            "limit": limit,
+            "active": "true" if active_only else "false",
+            "closed": "false",
         }
-
-    async def get_markets(self, limit: int = 50, active_only: bool = True) -> List[Dict]:
-        """Fetch available markets from Polymarket."""
-        params = {"limit": limit}
-        if active_only:
-            params["active"] = "true"
-
-        async with self.session.get(f"{self.base_url}/markets", params=params) as resp:
-            if resp.status == 200:
-                return await resp.json()
-            return []
+        try:
+            async with self.session.get(
+                f"{self.GAMMA_URL}/markets",
+                params=params,
+                timeout=aiohttp.ClientTimeout(total=20),
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if isinstance(data, list):
+                        return data
+                    if isinstance(data, dict):
+                        return data.get("data", data)
+        except Exception:
+            pass
+        # Fallback: CLOB public markets endpoint
+        try:
+            async with self.session.get(
+                f"{self.base_url}/markets",
+                params={"limit": limit},
+                timeout=aiohttp.ClientTimeout(total=15),
+            ) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+        except Exception:
+            pass
+        return []
 
     async def get_market(self, condition_id: str) -> Optional[Dict]:
-        """Fetch a specific market by condition ID."""
-        async with self.session.get(f"{self.base_url}/markets/{condition_id}") as resp:
-            if resp.status == 200:
-                return await resp.json()
-            return None
+        """Fetch a single market by condition ID."""
+        try:
+            async with self.session.get(
+                f"{self.base_url}/markets/{condition_id}",
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+        except Exception:
+            pass
+        return None
 
     async def get_order_book(self, token_id: str) -> Dict:
-        """Fetch order book for a specific token."""
-        params = {"token_id": token_id}
-        async with self.session.get(f"{self.base_url}/book", params=params) as resp:
-            if resp.status == 200:
-                return await resp.json()
-            return {"bids": [], "asks": []}
+        """
+        Fetch order book for a specific token.
+        Returns bids descending (best bid first), asks ascending (best ask first).
+        """
+        try:
+            async with self.session.get(
+                f"{self.base_url}/book",
+                params={"token_id": token_id},
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if isinstance(data, dict):
+                        return data
+        except Exception:
+            pass
+        return {"bids": [], "asks": []}
 
     async def get_price(self, token_id: str) -> Optional[float]:
-        """Get current mid-price for a token."""
+        """Get current mid-price for a token from the order book."""
         book = await self.get_order_book(token_id)
         bids = book.get("bids", [])
         asks = book.get("asks", [])
-
-        if bids and asks:
-            best_bid = float(bids[0]["price"])
-            best_ask = float(asks[0]["price"])
-            return (best_bid + best_ask) / 2
-        elif bids:
-            return float(bids[0]["price"])
-        elif asks:
-            return float(asks[0]["price"])
+        try:
+            if bids and asks:
+                bid0 = bids[0]
+                ask0 = asks[0]
+                best_bid = float(bid0["price"] if isinstance(bid0, dict) else bid0)
+                best_ask = float(ask0["price"] if isinstance(ask0, dict) else ask0)
+                return (best_bid + best_ask) / 2
+            if bids:
+                b = bids[0]
+                return float(b["price"] if isinstance(b, dict) else b)
+            if asks:
+                a = asks[0]
+                return float(a["price"] if isinstance(a, dict) else a)
+        except (KeyError, TypeError, ValueError):
+            pass
         return None
 
-    def sign_order(self, order_data: Dict) -> str:
-        """Sign an order with EIP-712 typed data."""
-        if not self.account:
-            raise ValueError("No wallet configured")
+    async def get_wallet_activity(
+        self, wallet: str, since_timestamp: int = 0
+    ) -> List[Dict]:
+        """Fetch recent trade activity for a target wallet (for copy-trading)."""
+        params = {"maker": wallet, "after": since_timestamp, "limit": 50}
+        try:
+            async with self.session.get(
+                f"{self.base_url}/trades",
+                params=params,
+                timeout=aiohttp.ClientTimeout(total=15),
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if isinstance(data, list):
+                        return data
+                    if isinstance(data, dict):
+                        return data.get("data", [])
+        except Exception:
+            pass
+        return []
 
-        # Create EIP-712 order hash
-        order_message = json.dumps(order_data, sort_keys=True)
-        message = encode_defunct(text=order_message)
-        signed = self.account.sign_message(message)
-        return signed.signature.hex()
+    # ── Authenticated order operations (EIP-712 via py-clob-client) ───────
 
     async def place_order(
         self,
         token_id: str,
-        side: str,  # "BUY" or "SELL"
+        side: str,          # "BUY" or "SELL"
         price: float,
         size: float,
-        order_type: str = "FOK"  # Fill-or-Kill
+        order_type: str = "FOK",
     ) -> Optional[Dict]:
-        """Place an order on Polymarket CLOB."""
-        order_data = {
-            "tokenID": token_id,
-            "side": side,
-            "price": str(price),
-            "size": str(size),
-            "type": order_type,
-            "funder": config.WALLET_ADDRESS,
-            "nonce": str(int(time.time() * 1000)),
-            "expiration": str(int(time.time()) + 3600),  # 1 hour expiry
-        }
+        """
+        Place a signed order on the Polymarket CLOB.
 
-        # Sign the order
-        signature = self.sign_order(order_data)
-        order_data["signature"] = signature
+        Uses py-clob-client for proper EIP-712 typed-data signing —
+        the previous HMAC / personal_sign approach was rejected by the exchange.
+        The sync client methods run in a thread-pool executor.
+        """
+        from py_clob_client.clob_types import OrderArgs, OrderType
 
-        async with self.session.post(
-            f"{self.base_url}/order",
-            json=order_data
-        ) as resp:
-            if resp.status in (200, 201):
-                result = await resp.json()
-                return result
-            else:
-                error = await resp.text()
-                print(f"❌ Order failed: {resp.status} — {error}")
-                return None
+        ot = OrderType.FOK if order_type.upper() == "FOK" else OrderType.GTC
+
+        order_args = OrderArgs(
+            price=float(round(price, 4)),
+            size=float(round(size, 4)),
+            side=side.upper(),
+            token_id=token_id,
+        )
+
+        loop = asyncio.get_event_loop()
+        clob = _get_clob()
+
+        try:
+            signed_order = await loop.run_in_executor(
+                None, partial(clob.create_order, order_args)
+            )
+            result = await loop.run_in_executor(
+                None, partial(clob.post_order, signed_order, ot)
+            )
+        except Exception as exc:
+            raise RuntimeError(
+                f"place_order failed ({side} {size} @ {price}): {exc}"
+            ) from exc
+
+        if isinstance(result, dict):
+            return result
+        if result:
+            return {"id": str(result)}
+        return None
 
     async def cancel_order(self, order_id: str) -> bool:
         """Cancel an open order."""
-        async with self.session.delete(
-            f"{self.base_url}/order/{order_id}"
-        ) as resp:
-            return resp.status == 200
-
-    async def get_trades(self, wallet: str, limit: int = 50) -> List[Dict]:
-        """Fetch recent trades for a wallet address."""
-        params = {
-            "maker_address": wallet,
-            "limit": limit
-        }
-        async with self.session.get(
-            f"{self.base_url}/trades",
-            params=params
-        ) as resp:
-            if resp.status == 200:
-                return await resp.json()
-            return []
-
-    async def get_positions(self, wallet: Optional[str] = None) -> List[Dict]:
-        """Fetch open positions for a wallet."""
-        address = wallet or config.WALLET_ADDRESS
-        async with self.session.get(
-            f"{self.base_url}/positions",
-            params={"user": address}
-        ) as resp:
-            if resp.status == 200:
-                return await resp.json()
-            return []
-
-    async def get_wallet_activity(self, wallet: str, since_timestamp: int = 0) -> List[Dict]:
-        """Monitor a target wallet for new activity."""
-        params = {
-            "maker_address": wallet,
-            "limit": 10
-        }
-        if since_timestamp:
-            params["after"] = str(since_timestamp)
-
-        async with self.session.get(
-            f"{self.base_url}/trades",
-            params=params
-        ) as resp:
-            if resp.status == 200:
-                trades = await resp.json()
-                # Filter to only trades after our timestamp
-                if since_timestamp:
-                    trades = [
-                        t for t in trades
-                        if int(t.get("timestamp", 0)) > since_timestamp
-                    ]
-                return trades
-            return []
+        loop = asyncio.get_event_loop()
+        clob = _get_clob()
+        try:
+            result = await loop.run_in_executor(
+                None, partial(clob.cancel, order_id)
+            )
+            return bool(result)
+        except Exception:
+            return False
