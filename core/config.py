@@ -38,6 +38,14 @@ class Config:
     MAX_OPEN_POSITIONS: int = int(os.getenv('MAX_OPEN_POSITIONS', '5'))
     STOP_LOSS_PCT: float = float(os.getenv('STOP_LOSS_PCT', '40'))
     TAKE_PROFIT_PCT: float = float(os.getenv('TAKE_PROFIT_PCT', '80'))
+    # Trailing Stop — trails from position peak instead of fixed entry
+    # e.g. 25 means: exit when price drops 25% from highest seen level
+    TRAILING_STOP_PCT: float = float(os.getenv('TRAILING_STOP_PCT', '25'))
+
+    # Kelly Criterion — estimated edge per trade for optimal sizing
+    # Tune upward if copy-traders consistently beat the market price
+    KELLY_EDGE_ESTIMATE: float = float(os.getenv('KELLY_EDGE_ESTIMATE', '0.08'))
+    KELLY_FRACTION: float = float(os.getenv('KELLY_FRACTION', '0.5'))  # half-Kelly
     DAILY_LOSS_LIMIT: float = float(os.getenv('DAILY_LOSS_LIMIT', '8.0'))
     MIN_SIGNAL_SIZE: float = float(os.getenv('MIN_SIGNAL_SIZE', '5.0'))
 
