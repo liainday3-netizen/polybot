@@ -99,13 +99,67 @@ class RiskManager:
             self.consecutive_wins = 0
 
     def check_stop_loss(self, entry_price: float, current_price: float, side: str) -> bool:
-        """Check if position should be stopped out."""
+        """
+        Check if position should be stopped out.
+        Uses plain fixed stop-loss (fallback when no peak is available).
+        Prefer check_trailing_stop() when peak_price is tracked.
+        """
         if side == "BUY":
             pnl_pct = ((current_price - entry_price) / entry_price) * 100
         else:
             pnl_pct = ((entry_price - current_price) / entry_price) * 100
 
         return pnl_pct <= -config.STOP_LOSS_PCT
+
+    def check_trailing_stop(
+        self,
+        peak_price: float,
+        current_price: float,
+        side: str,
+    ) -> bool:
+        """
+        Trailing stop: fires when price retreats TRAILING_STOP_PCT% from peak.
+        For BUY  → peak is the highest price seen since entry.
+        For SELL → peak is the lowest price seen since entry.
+
+        Falls back to plain stop-loss when peak hasn't moved past entry.
+        """
+        if peak_price <= 0:
+            return False
+
+        if side == "BUY":
+            # Exit if current price is X% below the peak
+            drawdown_pct = ((peak_price - current_price) / peak_price) * 100
+        else:
+            # For short, exit if price rose X% above the lowest point
+            drawdown_pct = ((current_price - peak_price) / peak_price) * 100
+
+        return drawdown_pct >= config.TRAILING_STOP_PCT
+
+    def kelly_size(self, price: float) -> float:
+        """
+        Kelly Criterion position sizing.
+        Estimates optimal bet fraction given:
+          - b  = odds paid on win  = (1/price - 1)   [binary prediction market]
+          - p  = estimated win probability = (1 - price) + edge
+          - Kelly fraction f = (b*p - (1-p)) / b
+        Uses half-Kelly (KELLY_FRACTION) for robustness.
+        Always capped at max_per_trade.
+        """
+        edge = config.KELLY_EDGE_ESTIMATE
+        # Clamp price to tradeable range
+        p_market = max(min(price, 0.95), 0.05)
+        p_win = min(max((1 - p_market) + edge, 0.05), 0.95)
+        b = (1.0 / p_market) - 1.0
+        if b <= 0:
+            return max(1.0, round(config.max_per_trade * 0.1, 2))
+        kelly_f = (b * p_win - (1 - p_win)) / b
+        kelly_f = max(kelly_f, 0.0)
+        # Apply fractional Kelly and convert to dollar amount
+        size = config.TOTAL_USDC * kelly_f * config.KELLY_FRACTION
+        size = max(size, 1.0)
+        size = min(size, config.max_per_trade)
+        return round(size, 2)
 
     def check_take_profit(self, entry_price: float, current_price: float, side: str) -> bool:
         """Check if position should take profit."""
