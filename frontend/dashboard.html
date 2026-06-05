@@ -180,6 +180,27 @@
         </div>
     </div>
 
+    <div class="grid" style="padding-top:0;">
+        <!-- Attribution Card -->
+        <div class="card" style="grid-column:1/4;margin-top:0;">
+            <div class="card-title">🎯 P&L Attribution by Source Wallet</div>
+            <table class="pos-table" style="font-size:.78rem;">
+                <thead>
+                    <tr>
+                        <th>Wallet / Source</th>
+                        <th>Trades</th>
+                        <th>Net P&L (USDC)</th>
+                        <th>Win Rate</th>
+                    </tr>
+                </thead>
+                <tbody id="attrRows">
+                    <tr><td colspan="4" style="text-align:center;color:var(--muted);padding:.8rem;">Loading…</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+    </div>
+
     <script>
         // App State
         const state = {
@@ -193,7 +214,7 @@
             signals: [],
             dailyPnl: 0,
             mevSaved: 0,
-            chartData: [0, 0.5, -0.2, 1.1, 0.8, 1.5, 0.3]
+            chartData: []   // populated via /api/pnl_history
         };
 
         // Mode toggle
@@ -229,24 +250,223 @@
             }
         }
 
-        // Bot control
-        let botInterval = null;
-        function toggleBot() {
-            state.botRunning = !state.botRunning;
-            const btn = document.getElementById('botBtn');
-            const pulse = document.getElementById('botPulse');
-            const txt = document.getElementById('botStatusText');
-            if (state.botRunning) {
-                btn.textContent = '⏹ Stop Bot'; btn.className = 'bot-btn stop';
-                pulse.style.background = 'var(--green)'; txt.textContent = 'Running';
-                botInterval = setInterval(generateSignal, 8000);
-                generateSignal();
-            } else {
-                btn.textContent = '▶ Start Bot'; btn.className = 'bot-btn start';
-                pulse.style.background = 'var(--muted)'; txt.textContent = 'Idle';
-                clearInterval(botInterval);
+
+        // ═══════════════════════════════════════════════════════════════
+        //  LIVE DATA  — polls /api/portfolio + /api/pnl_history every 15s
+        // ═══════════════════════════════════════════════════════════════
+
+        let _chart = null;  // chart instance
+
+        function drawPnlChart(days) {
+            const canvas = document.getElementById('pnlChart');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const W = canvas.offsetWidth || 400;
+            const H = canvas.offsetHeight || 140;
+            canvas.width  = W;
+            canvas.height = H;
+            ctx.clearRect(0, 0, W, H);
+
+            if (!days || days.length === 0) {
+                ctx.fillStyle = '#6b7080';
+                ctx.font = '12px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('No trade history yet', W/2, H/2);
+                return;
+            }
+
+            const vals  = days.map(d => d.pnl);
+            const max   = Math.max(...vals.map(Math.abs), 0.01);
+            const bw    = Math.floor(W / days.length) - 3;
+            const midY  = H / 2;
+
+            // zero line
+            ctx.strokeStyle = '#1f2234';
+            ctx.lineWidth   = 1;
+            ctx.beginPath(); ctx.moveTo(0, midY); ctx.lineTo(W, midY); ctx.stroke();
+
+            days.forEach((d, i) => {
+                const barH  = Math.abs(d.pnl / max) * (H / 2 - 8);
+                const x     = i * (bw + 3) + 2;
+                const isPos = d.pnl >= 0;
+                ctx.fillStyle = isPos ? '#00d68f' : '#ff4757';
+                ctx.fillRect(x, isPos ? midY - barH : midY, bw, barH);
+
+                // label (last bar only if there's space, or every 7 days)
+                if (days.length <= 14 || i % 7 === 0) {
+                    ctx.fillStyle = '#6b7080';
+                    ctx.font = '8px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(d.date.slice(5), x + bw/2, H - 2);  // MM-DD
+                }
+            });
+        }
+
+        function fmt$(v, sign=true) {
+            const n = parseFloat(v) || 0;
+            const prefix = sign && n > 0 ? '+' : '';
+            return prefix + '$' + Math.abs(n).toFixed(4);
+        }
+
+        function cls$(v) {
+            return parseFloat(v) > 0 ? 'green' : parseFloat(v) < 0 ? 'red' : '';
+        }
+
+        function setEl(id, text, cssClass) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.textContent = text;
+            if (cssClass !== undefined) el.className = cssClass;
+        }
+
+        async function loadLivePortfolio() {
+            try {
+                const r = await fetch('/api/portfolio');
+                if (!r.ok) return;
+                const d = await r.json();
+
+                // Portfolio card
+                const totalPnl = parseFloat(d.total_pnl) || 0;
+                setEl('bigPnl',  (totalPnl >= 0 ? '+' : '') + '$' + totalPnl.toFixed(4),
+                      'big-number ' + (totalPnl > 0 ? 'green' : totalPnl < 0 ? 'red' : ''));
+                const roi = parseFloat(d.roi_pct) || 0;
+                setEl('mROI',    (roi >= 0 ? '+' : '') + roi.toFixed(2) + '%', cls$(roi));
+                setEl('mWin',    d.win_rate + '%');
+                setEl('mTrades', d.total_trades);
+                setEl('mOpen',   d.open_count);
+
+                // Bot status
+                const running = d.bot_running;
+                const pulse = document.getElementById('botPulse');
+                const txt   = document.getElementById('botStatusText');
+                if (pulse) pulse.style.background = running ? 'var(--green)' : 'var(--muted)';
+                if (txt)   txt.textContent = running ? 'Running' : 'Stopped';
+
+                // Stats sidebar
+                setEl('sTodayPnl',   (d.daily_pnl >= 0 ? '+' : '') + '$' + parseFloat(d.daily_pnl).toFixed(4),
+                      'stat-value ' + (d.daily_pnl > 0 ? 'green' : d.daily_pnl < 0 ? 'red' : ''));
+                setEl('sMonthPnl',   (d.realized_pnl >= 0 ? '+' : '') + '$' + parseFloat(d.realized_pnl).toFixed(4),
+                      'stat-value ' + (d.realized_pnl > 0 ? 'green' : d.realized_pnl < 0 ? 'red' : ''));
+                setEl('sTotalTrades', d.total_trades);
+                setEl('sActive',      d.open_count);
+                setEl('sCapUsed',    '$' + parseFloat(d.capital_invested).toFixed(2));
+                setEl('sAvailable',  '$' + parseFloat(d.capital_available).toFixed(2));
+
+                const dl = parseFloat(d.daily_pnl).toFixed(2);
+                const lim = parseFloat(d.daily_limit).toFixed(2);
+                const dlEl = document.getElementById('sDailyLoss');
+                if (dlEl) {
+                    dlEl.textContent = '$' + Math.abs(dl) + ' / $' + lim;
+                    dlEl.className = 'stat-value' + (d.circuit_breaker ? ' red' : '');
+                }
+
+                // Circuit breaker banner
+                let banner = document.getElementById('circuitBanner');
+                if (d.circuit_breaker) {
+                    if (!banner) {
+                        banner = document.createElement('div');
+                        banner.id = 'circuitBanner';
+                        banner.style = 'background:#ff4757;color:#fff;text-align:center;padding:.6rem;font-weight:700;font-size:.85rem;';
+                        document.body.prepend(banner);
+                    }
+                    banner.textContent = '⛔ CIRCUIT BREAKER ACTIVE — Daily loss limit reached. No new trades until tomorrow.';
+                } else if (banner) {
+                    banner.remove();
+                }
+
+                // Open positions table
+                const tbody = document.getElementById('posBody');
+                if (tbody) {
+                    if (!d.open_positions || d.open_positions.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:1.5rem;">No open positions</td></tr>';
+                    } else {
+                        tbody.innerHTML = d.open_positions.map(pos => {
+                            const pnlCls = pos.pnl > 0 ? 'green' : pos.pnl < 0 ? 'red' : '';
+                            return '<tr>'
+                                + '<td>' + pos.market + '</td>'
+                                + '<td><span class="sig-side ' + (pos.side === 'BUY' ? 'buy' : 'sell') + '">' + pos.side + '</span></td>'
+                                + '<td>$' + pos.size_usdc + '</td>'
+                                + '<td>' + pos.entry_price + '</td>'
+                                + '<td>' + pos.current_price + '</td>'
+                                + '<td class="' + pnlCls + '">' + (pos.pnl >= 0 ? '+' : '') + pos.pnl.toFixed(4) + '</td>'
+                                + '<td class="' + pnlCls + '">' + (pos.pnl_pct >= 0 ? '+' : '') + pos.pnl_pct.toFixed(1) + '%</td>'
+                                + '<td><span style="font-size:.7rem;color:var(--muted);">' + pos.age_minutes + 'm</span></td>'
+                                + '</tr>';
+                        }).join('');
+                    }
+                }
+
+                // Attribution card (if present)
+                const attrEl = document.getElementById('attrRows');
+                if (attrEl && d.attribution) {
+                    renderAttribution(d.attribution);
+                }
+
+            } catch(e) {
+                // API not ready yet, silently skip
             }
         }
+
+        async function loadPnlHistory() {
+            try {
+                const r = await fetch('/api/pnl_history?days=7');
+                if (!r.ok) return;
+                const days = await r.json();
+                drawPnlChart(days);
+            } catch(e) {}
+        }
+
+        async function loadAttribution() {
+            try {
+                const r = await fetch('/api/attribution');
+                if (!r.ok) return;
+                const data = await r.json();
+                const el = document.getElementById('attrRows');
+                if (!el) return;
+                if (!data || data.length === 0) {
+                    el.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:.8rem;">No closed trades yet</td></tr>';
+                    return;
+                }
+                // nickname mapping
+                const nicknames = {
+                    '0x6211f97a76': 'Tiger200',
+                    '0xb91aeb5acc': 'afghj2421',
+                    '0xfbf3d501e8': 'VPenguin',
+                    'auto_trader':  '🤖 Auto'
+                };
+                function nick(src) {
+                    for (const [prefix, name] of Object.entries(nicknames)) {
+                        if (src.startsWith(prefix) || src === prefix) return name;
+                    }
+                    return src.slice(0,10)+'…';
+                }
+                el.innerHTML = data.map(w => {
+                    const pnlCls = w.pnl > 0 ? 'green' : w.pnl < 0 ? 'red' : '';
+                    return '<tr>'
+                        + '<td>' + nick(w.source) + '</td>'
+                        + '<td>' + w.trades + '</td>'
+                        + '<td class="' + pnlCls + '">' + (w.pnl >= 0 ? '+' : '') + w.pnl.toFixed(4) + '</td>'
+                        + '<td>' + w.win_rate + '%</td>'
+                        + '</tr>';
+                }).join('');
+            } catch(e) {}
+        }
+
+        // Initial load + polling
+        function startLivePolling() {
+            loadLivePortfolio();
+            loadPnlHistory();
+            loadAttribution();
+            setInterval(loadLivePortfolio, 15000);   // every 15s
+            setInterval(loadPnlHistory, 60000);       // every 60s
+            setInterval(loadAttribution, 60000);
+        }
+
+        // Start on page load
+        window.addEventListener('load', startLivePolling);
+        window.addEventListener('resize', loadPnlHistory);
+
+        function toggleBot() { /* controlled by bot server */ }
 
         // Signal generation
         const MARKETS = ['Will Fed cut rates in June?','Trump 2026 midterms win?','BTC above $100K July?','ETH above $5K Q3?','Ukraine ceasefire Aug?','Apple above $250?','US recession 2026?','SpaceX Mars 2026?','AI regulation bill passes?','Gold above $3000?'];
