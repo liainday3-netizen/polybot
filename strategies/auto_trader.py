@@ -197,11 +197,15 @@ class AutoTrader:
         best_score = getattr(config, "AUTO_TRADE_MIN_SCORE", 65)
 
         for market in markets:
+            # Guard: Polymarket API occasionally returns non-dict entries
+            if not isinstance(market, dict):
+                continue
+
             tokens = market.get("tokens") or market.get("clob_token_ids") or []
             market_name = market.get("question") or market.get("title") or "Unknown"
 
             for token in tokens:
-                token_id = token if isinstance(token, str) else token.get("token_id", "")
+                token_id = token if isinstance(token, str) else token.get("token_id", "") if isinstance(token, dict) else ""
                 if not token_id:
                     continue
 
@@ -210,13 +214,25 @@ class AutoTrader:
                 except Exception:
                     continue
 
+                # Guard: order book response must be a dict
+                if not isinstance(book, dict):
+                    continue
+
                 bids = book.get("bids", [])
                 asks = book.get("asks", [])
                 if not bids or not asks:
                     continue
 
-                bid = float(bids[0]["price"])
-                ask = float(asks[0]["price"])
+                # Guard: bid/ask entries must be dicts with a 'price' key
+                if not isinstance(bids[0], dict) or not isinstance(asks[0], dict):
+                    continue
+
+                try:
+                    bid = float(bids[0]["price"])
+                    ask = float(asks[0]["price"])
+                except (KeyError, TypeError, ValueError):
+                    continue
+
                 mid = (bid + ask) / 2
 
                 # Record price sample for momentum tracking
