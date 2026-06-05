@@ -415,6 +415,83 @@
         window.addEventListener('resize', drawChart);
     </script>
 
+    <!-- Live Performance Section -->
+    <style>
+        .perf-section{max-width:1500px;margin:0 auto 2rem;padding:0 1.5rem}
+        .perf-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:.75rem;margin-bottom:1rem}
+        @media(max-width:900px){.perf-grid{grid-template-columns:repeat(2,1fr)}}
+        .perf-kpi{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:1rem;text-align:center}
+        .perf-kpi-label{font-size:.65rem;text-transform:uppercase;color:var(--muted);letter-spacing:.06em;margin-bottom:.4rem}
+        .perf-kpi-val{font-size:1.4rem;font-weight:800;font-variant-numeric:tabular-nums}
+        .perf-kpi-sub{font-size:.65rem;color:var(--muted);margin-top:2px}
+        .perf-table-wrap{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:1rem}
+        .perf-table-title{font-size:.7rem;text-transform:uppercase;color:var(--muted);letter-spacing:.06em;margin-bottom:.75rem}
+        .perf-table{width:100%;border-collapse:collapse;font-size:.75rem}
+        .perf-table th{text-align:left;color:var(--muted);font-weight:500;padding:.3rem .5rem;border-bottom:1px solid var(--border)}
+        .perf-table td{padding:.35rem .5rem;border-bottom:1px solid rgba(255,255,255,.04)}
+        .pos{color:#00d68f}.neg{color:#ff4757}.neu{color:var(--muted)}
+        #perfStatus{font-size:.7rem;color:var(--muted);margin-top:.5rem;text-align:right}
+    </style>
+    <div class="perf-section">
+        <div class="perf-grid">
+            <div class="perf-kpi"><div class="perf-kpi-label">Total Trades</div><div class="perf-kpi-val" id="perfTotal">—</div><div class="perf-kpi-sub">since last deploy</div></div>
+            <div class="perf-kpi"><div class="perf-kpi-label">Win Rate</div><div class="perf-kpi-val" id="perfWinRate">—</div><div class="perf-kpi-sub">profitable exits</div></div>
+            <div class="perf-kpi"><div class="perf-kpi-label">Realized P&amp;L</div><div class="perf-kpi-val" id="perfPnl">—</div><div class="perf-kpi-sub">USDC net</div></div>
+            <div class="perf-kpi"><div class="perf-kpi-label">Best / Worst</div><div class="perf-kpi-val" id="perfBestWorst">—</div><div class="perf-kpi-sub">single trade USDC</div></div>
+        </div>
+        <div class="perf-table-wrap">
+            <div class="perf-table-title">&#128203; Recent Trades</div>
+            <table class="perf-table">
+                <thead><tr><th>Market</th><th>Side</th><th>P&amp;L</th><th>%</th><th>Reason</th><th>Duration</th><th>Source</th></tr></thead>
+                <tbody id="perfRows"><tr><td colspan="7" style="color:var(--muted);text-align:center;padding:1rem">Loading…</td></tr></tbody>
+            </table>
+            <div id="perfStatus"></div>
+        </div>
+    </div>
+    <script>
+    (function(){
+        function cls(v){return v>0?'pos':v<0?'neg':'neu'}
+        function loadPerf(){
+            fetch('/api/performance').then(function(r){return r.json()}).then(function(d){
+                document.getElementById('perfTotal').textContent=d.total_trades;
+                var wr=d.win_rate;
+                var wrEl=document.getElementById('perfWinRate');
+                wrEl.textContent=wr+'%';
+                wrEl.className='perf-kpi-val '+(wr>=55?'pos':wr>=45?'neu':'neg');
+                var pnlEl=document.getElementById('perfPnl');
+                pnlEl.textContent=(d.realized_pnl>=0?'+':'')+d.realized_pnl.toFixed(4);
+                pnlEl.className='perf-kpi-val '+(d.realized_pnl>0?'pos':d.realized_pnl<0?'neg':'neu');
+                document.getElementById('perfBestWorst').innerHTML=
+                    '<span class="pos">+'+(d.best_trade||0).toFixed(3)+'</span> / <span class="neg">'+(d.worst_trade||0).toFixed(3)+'</span>';
+                var rows=d.recent_trades;
+                var tbody=document.getElementById('perfRows');
+                if(!rows||rows.length===0){
+                    tbody.innerHTML='<tr><td colspan="7" style="color:var(--muted);text-align:center;padding:1rem">No trades yet — waiting for first signal</td></tr>';
+                } else {
+                    tbody.innerHTML=rows.map(function(t){
+                        var p=parseFloat(t.pnl||0);
+                        var pp=parseFloat(t.pnl_pct||0);
+                        return '<tr>'
+                            +'<td>'+t.market+'</td>'
+                            +'<td>'+t.side+'</td>'
+                            +'<td class="'+cls(p)+'">'+(p>=0?'+':'')+p.toFixed(4)+'</td>'
+                            +'<td class="'+cls(pp)+'">'+(pp>=0?'+':'')+pp.toFixed(1)+'%</td>'
+                            +'<td>'+t.reason+'</td>'
+                            +'<td>'+t.duration_minutes+'m</td>'
+                            +'<td>'+t.source+'</td>'
+                            +'</tr>';
+                    }).join('');
+                }
+                document.getElementById('perfStatus').textContent='Last updated '+new Date().toLocaleTimeString();
+            }).catch(function(){
+                document.getElementById('perfStatus').textContent='Performance data unavailable (bot offline?)';
+            });
+        }
+        loadPerf();
+        setInterval(loadPerf, 30000);  // refresh every 30s
+    })();
+    </script>
+
     <!-- Capital Projection Section -->
     <style>
         .proj-section{max-width:1500px;margin:0 auto 2rem;padding:0 1.5rem}
