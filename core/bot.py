@@ -2,6 +2,8 @@
 POLYBOT — Main Trading Bot Orchestrator
 Monitors target wallets, detects signals, and executes copy-trades.
 Also runs an autonomous market scanner when AUTO_TRADE_ENABLED=true.
+Positions are exited on Polymarket with real SELL orders when stop-loss
+or take-profit triggers.
 """
 import asyncio
 import time
@@ -86,10 +88,11 @@ class PolyBot:
     def _print_banner(self):
         """Print startup banner."""
         print("═" * 50)
-        print("  POLYMARKET COPY-TRADE BOT  v1.1")
+        print("  POLYMARKET COPY-TRADE BOT  v1.2")
         print(f"  Capital: ${config.TOTAL_USDC} USDC | Gas reserve: ${config.POL_RESERVE} POL")
         if config.AUTO_TRADE_ENABLED:
             print("  Auto-Trade: ENABLED")
+        print("  Execution: EIP-712 signed orders ✓")
         print("═" * 50)
         print()
         print(f"Bot started | Capital: ${config.TOTAL_USDC} USDC | Targets: {len(config.TARGET_WALLETS)} wallets")
@@ -118,7 +121,7 @@ class PolyBot:
         """Check a target wallet for new trades."""
         try:
             trades = await self.client.get_wallet_activity(
-                wallet, 
+                wallet,
                 since_timestamp=self.last_seen.get(wallet, 0)
             )
 
@@ -167,12 +170,16 @@ class PolyBot:
         # Execute the copy trade
         self.logger.info(f"🚀 Placing order | ${our_size:.2f} @ {price}")
 
-        result = await self.client.place_order(
-            token_id=token_id,
-            side=side,
-            price=price,
-            size=our_size
-        )
+        try:
+            result = await self.client.place_order(
+                token_id=token_id,
+                side=side,
+                price=price,
+                size=our_size
+            )
+        except Exception as exc:
+            self.logger.error(f"Order placement error: {exc}")
+            return
 
         if result:
             order_id = result.get("id", result.get("orderID", ""))
@@ -227,12 +234,16 @@ class PolyBot:
                             f"@ {signal_found.price:.3f} (score={signal_found.score})"
                         )
 
-                        result = await self.client.place_order(
-                            token_id=signal_found.token_id,
-                            side=signal_found.side,
-                            price=signal_found.price,
-                            size=config.max_per_trade,
-                        )
+                        try:
+                            result = await self.client.place_order(
+                                token_id=signal_found.token_id,
+                                side=signal_found.side,
+                                price=signal_found.price,
+                                size=config.max_per_trade,
+                            )
+                        except Exception as exc:
+                            self.logger.error(f"[AutoTrader] Order error: {exc}")
+                            result = None
 
                         if result:
                             order_id = result.get("id", result.get("orderID", ""))
@@ -251,7 +262,7 @@ class PolyBot:
                             self.auto_trader.record_trade()
                         else:
                             self.logger.error(
-                                f"[AutoTrader] Order failed for {signal_found.market_name}"
+                                f"[AutoTrader] Order returned empty for {signal_found.market_name}"
                             )
 
                 await asyncio.sleep(config.AUTO_TRADE_INTERVAL)
@@ -261,7 +272,11 @@ class PolyBot:
                 await asyncio.sleep(30)
 
     async def _position_monitor_loop(self):
-        """Monitor open positions for stop-loss and take-profit exits."""
+        """
+        Monitor open positions for stop-loss and take-profit exits.
+        When a trigger fires, a real SELL order is placed on Polymarket
+        before the position is closed locally.
+        """
         while self.running:
             try:
                 open_positions = self.positions.get_open_positions()
@@ -273,27 +288,52 @@ class PolyBot:
 
                     pos.update_pnl(current_price)
 
-                    # Check stop-loss
+                    exit_reason = None
+                    exit_side = "SELL" if pos.side == "BUY" else "BUY"
+
                     if self.risk.check_stop_loss(pos.entry_price, current_price, pos.side):
+                        exit_reason = "stopped"
                         self.logger.warning(
                             f"⛔ Stop-loss triggered: {pos.market} "
                             f"(entry: {pos.entry_price:.3f}, current: {current_price:.3f})"
                         )
-                        trade = self.positions.close_position(pos.id, current_price, "stopped")
-                        if trade:
-                            self.risk.record_trade_result(trade["pnl"])
 
-                    # Check take-profit
                     elif self.risk.check_take_profit(pos.entry_price, current_price, pos.side):
+                        exit_reason = "profit_taken"
                         self.logger.info(
                             f"💰 Take-profit hit: {pos.market} "
                             f"(entry: {pos.entry_price:.3f}, current: {current_price:.3f})"
                         )
-                        trade = self.positions.close_position(pos.id, current_price, "profit_taken")
+
+                    if exit_reason:
+                        # ── Place the actual exit order on Polymarket ───────
+                        try:
+                            exit_result = await self.client.place_order(
+                                token_id=pos.token_id,
+                                side=exit_side,
+                                price=current_price,
+                                size=pos.size_usdc,
+                                order_type="FOK",
+                            )
+                            if exit_result:
+                                self.logger.info(
+                                    f"[Exit] {exit_side} order placed for {pos.market[:40]} "
+                                    f"| order_id={exit_result.get('id', '?')}"
+                                )
+                            else:
+                                self.logger.warning(
+                                    f"[Exit] Empty response for {pos.market} — closing locally"
+                                )
+                        except Exception as exc:
+                            self.logger.error(
+                                f"[Exit] Order failed for {pos.market}: {exc} — closing locally"
+                            )
+
+                        # ── Always close locally (prevents phantom positions) ─
+                        trade = self.positions.close_position(pos.id, current_price, exit_reason)
                         if trade:
                             self.risk.record_trade_result(trade["pnl"])
 
-                    # Log position status
                     else:
                         self.logger.position_update(pos)
 
