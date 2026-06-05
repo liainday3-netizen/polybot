@@ -31,17 +31,24 @@ class Position:
     current_price: float = 0.0
     pnl: float = 0.0
     pnl_pct: float = 0.0
+    peak_price: float = 0.0   # high-water mark for trailing stop
     status: str = "open"  # open, closed, stopped, profit_taken
 
     def update_pnl(self, current_price: float):
-        """Update P&L based on current price."""
+        """Update P&L based on current price. Also updates trailing-stop high-water mark."""
         self.current_price = current_price
         if self.side == "BUY":
             self.pnl = (current_price - self.entry_price) * self.quantity
             self.pnl_pct = ((current_price - self.entry_price) / self.entry_price) * 100
+            # Track high-water mark for trailing stop
+            if current_price > self.peak_price:
+                self.peak_price = current_price
         else:
             self.pnl = (self.entry_price - current_price) * self.quantity
             self.pnl_pct = ((self.entry_price - current_price) / self.entry_price) * 100
+            # Track low-water mark for short trailing stop
+            if self.peak_price == 0 or current_price < self.peak_price:
+                self.peak_price = current_price
 
 
 class PositionManager:
