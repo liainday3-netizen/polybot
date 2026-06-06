@@ -9,6 +9,7 @@ from typing import Dict, List, Optional, Tuple
 
 from core.config import config
 from utils.logger import BotLogger
+from strategies.capital_projection import projection_engine
 
 
 class MarketSignal:
@@ -22,6 +23,8 @@ class MarketSignal:
         price: float,
         score: float,
         reason: str,
+        size_multiplier: float = 1.0,
+        market_context=None,
     ):
         self.token_id = token_id
         self.market_name = market_name
@@ -29,6 +32,8 @@ class MarketSignal:
         self.price = price
         self.score = score
         self.reason = reason
+        self.size_multiplier = size_multiplier   # from CapitalProjectionEngine
+        self.market_context = market_context     # MarketContext snapshot at scan time
 
     def __repr__(self):
         return (
@@ -193,8 +198,25 @@ class AutoTrader:
         if not markets:
             return None
 
+        # ── Capital projection: live market context ─────────────────────────────
+        market_ctx = None
+        score_adj = 0.0
+        size_mult = 1.0
+        if getattr(config, "PROJECTION_ENABLED", True):
+            try:
+                market_ctx = await projection_engine.get_market_context()
+                score_adj  = projection_engine.get_score_adjustment(market_ctx)
+                size_mult  = projection_engine.get_size_multiplier(market_ctx)
+                if market_ctx:
+                    self.logger.info(
+                        f"[AutoTrader] 📊 Market regime={market_ctx.regime}  "
+                        f"score_adj={score_adj:+.0f}  size_mult={size_mult}"
+                    )
+            except Exception as _proj_exc:
+                self.logger.warning(f"[AutoTrader] Projection fetch failed: {_proj_exc}")
+
         best_signal: Optional[MarketSignal] = None
-        best_score = getattr(config, "AUTO_TRADE_MIN_SCORE", 65)
+        best_score = getattr(config, "AUTO_TRADE_MIN_SCORE", 65) + score_adj
 
         for market in markets:
             # Guard: Polymarket API occasionally returns non-dict entries
@@ -250,6 +272,8 @@ class AutoTrader:
                         price=ask if side == "BUY" else bid,
                         score=score,
                         reason=reason,
+                        size_multiplier=size_mult,
+                        market_context=market_ctx,
                     )
 
                 await asyncio.sleep(0.05)  # gentle rate-limit
