@@ -47,7 +47,7 @@ class Config:
     KELLY_EDGE_ESTIMATE: float = float(os.getenv('KELLY_EDGE_ESTIMATE', '0.08'))
     KELLY_FRACTION: float = float(os.getenv('KELLY_FRACTION', '0.5'))  # half-Kelly
     DAILY_LOSS_LIMIT: float = float(os.getenv('DAILY_LOSS_LIMIT', '8.0'))
-    MIN_SIGNAL_SIZE: float = float(os.getenv('MIN_SIGNAL_SIZE', '5.0'))
+    MIN_SIGNAL_SIZE: float = float(os.getenv('MIN_SIGNAL_SIZE', '2.0'))
 
     # Copy Settings
     COPY_SCALE_FACTOR: float = float(os.getenv('COPY_SCALE_FACTOR', '10'))
