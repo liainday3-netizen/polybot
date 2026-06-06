@@ -52,6 +52,12 @@ REGIME_SIZE_MULT: Dict[str, float] = {
 }
 
 
+# ── Micro trade phase ─────────────────────────────────────────────────────────
+# When starting capital is small, the bot trades fixed micro-size positions.
+# These earn a lower ROI per unit capital (limited upside per $1 bet) but protect
+# the account from blowup during the bootstrapping phase.
+MICRO_TRADE_ROI_MULT = 0.55   # micro-phase monthly rate is 55% of standard
+
 # ── Market context ─────────────────────────────────────────────────────────────
 
 class MarketContext:
@@ -215,13 +221,28 @@ class CapitalProjectionEngine:
         start_capital: float,
         months: int = 12,
         market_context: Optional[MarketContext] = None,
+        micro_threshold: float = 50.0,
+        micro_amount: float = 1.0,
+        micro_enabled: bool = True,
     ) -> Dict[str, Any]:
         """
         Return compounded growth curves for all three scenarios.
-        ROI rates are scaled by the current market regime when context is available.
+
+        Micro trade phase:
+          When start_capital < micro_threshold AND micro_enabled is True, the first
+          portion of the curve uses a reduced monthly rate (MICRO_TRADE_ROI_MULT) to
+          model fixed-size micro positions ($micro_amount per trade).  Once projected
+          capital crosses micro_threshold the curve automatically transitions to the
+          full regime-adjusted rate, reflecting the shift to %-based position sizing.
+
+        ROI rates are additionally scaled by the live market regime when context is
+        available (bull/sideways/bear).
         """
         regime = market_context.regime if market_context else "sideways"
         roi_mults = REGIME_ROI_MULT.get(regime, REGIME_ROI_MULT["sideways"])
+
+        # Determine whether we actually start in micro phase
+        in_micro_at_start = micro_enabled and (start_capital < micro_threshold)
 
         labels = ["Now"] + [f"M{i}" for i in range(1, months + 1)]
         result: Dict[str, Any] = {
@@ -230,20 +251,49 @@ class CapitalProjectionEngine:
             "labels": labels,
             "regime": regime,
             "market_context": market_context.to_dict() if market_context else None,
+            "micro_phase": {
+                "enabled": in_micro_at_start,
+                "threshold": micro_threshold,
+                "trade_amount": micro_amount,
+                "roi_mult": MICRO_TRADE_ROI_MULT if in_micro_at_start else 1.0,
+                "exit_month": {},   # filled per scenario below
+            },
             "scenarios": {},
             "milestones": {"double": {}, "triple": {}, "ten_x": {}},
         }
 
         for key, meta in BASE_SCENARIOS.items():
-            adj_roi = meta["annual_roi"] * roi_mults[key]
-            rate = (1 + adj_roi) ** (1 / 12) - 1
-            values = [round(start_capital * (1 + rate) ** m, 2) for m in range(months + 1)]
+            adj_roi  = meta["annual_roi"] * roi_mults[key]
+            full_rate  = (1 + adj_roi) ** (1 / 12) - 1
+            micro_rate = full_rate * MICRO_TRADE_ROI_MULT
+
+            # Build curve month-by-month, switching rate when threshold is crossed
+            values: list = [round(start_capital, 2)]
+            micro_exit_month: Optional[int] = None
+            in_micro = in_micro_at_start
+
+            for m in range(1, months + 1):
+                prev = values[-1]
+                rate = micro_rate if in_micro else full_rate
+                nxt  = round(prev * (1 + rate), 2)
+
+                # Transition: did we just cross the threshold?
+                if in_micro and nxt >= micro_threshold:
+                    in_micro = False
+                    micro_exit_month = m
+
+                values.append(nxt)
+
             result["scenarios"][key] = {
                 "label": meta["label"],
                 "color": meta["color"],
                 "annual_roi": round(adj_roi, 4),
+                "micro_annual_roi": round(adj_roi * MICRO_TRADE_ROI_MULT, 4) if in_micro_at_start else None,
                 "values": values,
+                "micro_exit_month": micro_exit_month,
             }
+            result["micro_phase"]["exit_month"][key] = micro_exit_month
+
             for ms_key, mult in [("double", 2), ("triple", 3), ("ten_x", 10)]:
                 target = start_capital * mult
                 hit = next((m for m, v in enumerate(values) if v >= target), None)

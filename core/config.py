@@ -68,6 +68,14 @@ class Config:
     # Capital Projection Engine
     PROJECTION_ENABLED: bool = os.getenv('PROJECTION_ENABLED', 'true').lower() == 'true'
 
+    # Micro Trade Phase  (bootstrapping with small capital)
+    # When TOTAL_USDC < MICRO_TRADE_THRESHOLD the bot uses a fixed dollar amount per
+    # trade (MICRO_TRADE_AMOUNT) instead of the % allocation.  Projection curves show
+    # a reduced-ROI micro phase until capital crosses the threshold, then auto-scale.
+    MICRO_TRADE_ENABLED:   bool  = os.getenv('MICRO_TRADE_ENABLED',   'true').lower() == 'true'
+    MICRO_TRADE_AMOUNT:    float = float(os.getenv('MICRO_TRADE_AMOUNT',    '1.0'))   # USDC per micro trade
+    MICRO_TRADE_THRESHOLD: float = float(os.getenv('MICRO_TRADE_THRESHOLD', '50.0'))  # graduate to % sizing
+
     # MEV Protection
     MEV_PROTECTION: bool = os.getenv('MEV_PROTECTION', 'true').lower() == 'true'
     PRIVATE_RPC: str = os.getenv('PRIVATE_RPC', 'https://rpc-mainnet.private.polygon.technology')

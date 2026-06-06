@@ -34,6 +34,8 @@ class MarketSignal:
         self.reason = reason
         self.size_multiplier = size_multiplier   # from CapitalProjectionEngine
         self.market_context = market_context     # MarketContext snapshot at scan time
+        self.is_micro   = False                  # True when bot is in micro-trade phase
+        self.micro_amount: Optional[float] = None  # fixed USDC amount for micro trades
 
     def __repr__(self):
         return (
@@ -225,6 +227,22 @@ class AutoTrader:
                     )
             except Exception as _proj_exc:
                 self.logger.warning(f"[AutoTrader] Projection fetch failed: {_proj_exc}")
+
+        # ── Micro trade phase detection ──────────────────────────────────────────
+        micro_enabled   = getattr(config, "MICRO_TRADE_ENABLED", True)
+        micro_amount    = getattr(config, "MICRO_TRADE_AMOUNT", 1.0)
+        micro_threshold = getattr(config, "MICRO_TRADE_THRESHOLD", 50.0)
+        current_balance = getattr(config, "TOTAL_USDC", 15.0)
+        in_micro_phase  = micro_enabled and (current_balance < micro_threshold)
+
+        if in_micro_phase:
+            self.logger.info(
+                f"[AutoTrader] 🔬 Micro-trade phase  "
+                f"balance=${current_balance:.2f} < threshold=${micro_threshold:.0f}  "
+                f"trade_size=${micro_amount:.2f}"
+            )
+            # Be slightly more selective in micro phase to protect small capital
+            score_adj += 5.0
 
         min_score = getattr(config, "AUTO_TRADE_MIN_SCORE", 65) + score_adj
         best_signal: Optional[MarketSignal] = None
