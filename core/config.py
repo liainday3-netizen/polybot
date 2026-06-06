@@ -61,9 +61,18 @@ class Config:
     AUTO_SCALE_MAX_FACTOR: float = float(os.getenv('AUTO_SCALE_MAX_FACTOR', '3.0'))   # hard cap on current_scale
     AUTO_SCALE_LOSS_DOWN_PCT: float = float(os.getenv('AUTO_SCALE_LOSS_DOWN_PCT', '10.0'))  # % to shrink on each loss
     AUTO_SCALE_DRAWDOWN_RESET_PCT: float = float(os.getenv('AUTO_SCALE_DRAWDOWN_RESET_PCT', '15.0'))  # daily loss% that resets scale to 1.0
+    # ── Momentum strategy ──────────────────────────────────────────────────────
+    MOMENTUM_FAST_WINDOW:    int   = int(os.getenv('MOMENTUM_FAST_WINDOW',   '300'))    # 5 min
+    MOMENTUM_MEDIUM_WINDOW:  int   = int(os.getenv('MOMENTUM_MEDIUM_WINDOW', '1200'))   # 20 min
+    MOMENTUM_SLOW_WINDOW:    int   = int(os.getenv('MOMENTUM_SLOW_WINDOW',   '3600'))   # 60 min
+    MOMENTUM_RSI_OVERSOLD:   float = float(os.getenv('MOMENTUM_RSI_OVERSOLD',  '30'))
+    MOMENTUM_RSI_OVERBOUGHT: float = float(os.getenv('MOMENTUM_RSI_OVERBOUGHT','70'))
+    MOMENTUM_NOISE_FLOOR:    float = float(os.getenv('MOMENTUM_NOISE_FLOOR', '0.005'))
+    MOMENTUM_SCORE_CAP:      float = float(os.getenv('MOMENTUM_SCORE_CAP', '60.0'))
+
 
     # Auto-Trade (autonomous market scanner)
-    AUTO_TRADE_ENABLED: bool = os.getenv('AUTO_TRADE_ENABLED', 'false').lower() == 'true'
+    AUTO_TRADE_ENABLED: bool = os.getenv('AUTO_TRADE_ENABLED', 'true').lower() == 'true'
     AUTO_TRADE_INTERVAL: int = int(os.getenv('AUTO_TRADE_INTERVAL', '300'))   # seconds between scans
     AUTO_TRADE_MAX_DAILY: int = int(os.getenv('AUTO_TRADE_MAX_DAILY', '3'))   # max independent trades/day
     AUTO_TRADE_MIN_SCORE: float = float(os.getenv('AUTO_TRADE_MIN_SCORE', '65'))  # min signal score (0-100)
@@ -71,13 +80,6 @@ class Config:
     # Capital Projection Engine
     PROJECTION_ENABLED: bool = os.getenv('PROJECTION_ENABLED', 'true').lower() == 'true'
 
-    # Micro Trade Phase  (bootstrapping with small capital)
-    # When TOTAL_USDC < MICRO_TRADE_THRESHOLD the bot uses a fixed dollar amount per
-    # trade (MICRO_TRADE_AMOUNT) instead of the % allocation.  Projection curves show
-    # a reduced-ROI micro phase until capital crosses the threshold, then auto-scale.
-    MICRO_TRADE_ENABLED:   bool  = os.getenv('MICRO_TRADE_ENABLED',   'true').lower() == 'true'
-    MICRO_TRADE_AMOUNT:    float = float(os.getenv('MICRO_TRADE_AMOUNT',    '1.0'))   # USDC per micro trade
-    MICRO_TRADE_THRESHOLD: float = float(os.getenv('MICRO_TRADE_THRESHOLD', '50.0'))  # graduate to % sizing
 
     # MEV Protection
     MEV_PROTECTION: bool = os.getenv('MEV_PROTECTION', 'true').lower() == 'true'
