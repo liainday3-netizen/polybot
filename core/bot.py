@@ -140,7 +140,10 @@ class PolyBot:
         """Process a detected trade signal and execute copy-trade."""
         market = trade.get("market", "Unknown")
         token_id = trade.get("asset_id", trade.get("token_id", ""))
-        side = trade.get("side", "BUY").upper()
+        # FIX: Polymarket has no sell-to-open — always BUY.
+        # "Selling" is done by buying the opposing token (NO vs YES).
+        # The token_id from the signal already encodes direction.
+        side = "BUY"
         target_size = float(trade.get("size", 0))
         price = float(trade.get("price", 0))
 
@@ -170,12 +173,18 @@ class PolyBot:
         # Execute the copy trade
         self.logger.info(f"🚀 Placing order | ${our_size:.2f} @ {price}")
 
+        # FIX: use GTC (not FOK) so the order survives brief price movement
+        # after the copy delay.  Add a small slippage allowance so we're
+        # willing to fill up to 2 cents above the signal price.
+        entry_price = min(round(price + 0.02, 4), 0.99)
+
         try:
             result = await self.client.place_order(
                 token_id=token_id,
                 side=side,
-                price=price,
-                size=our_size
+                price=entry_price,
+                size=our_size,
+                order_type="GTC",
             )
         except Exception as exc:
             self.logger.error(f"Order placement error: {exc}")
@@ -234,12 +243,14 @@ class PolyBot:
                             f"@ {signal_found.price:.3f} (score={signal_found.score})"
                         )
 
+                        # FIX: GTC so the order rests if ask price shifts slightly
                         try:
                             result = await self.client.place_order(
                                 token_id=signal_found.token_id,
                                 side=signal_found.side,
                                 price=signal_found.price,
                                 size=config.max_per_trade,
+                                order_type="GTC",
                             )
                         except Exception as exc:
                             self.logger.error(f"[AutoTrader] Order error: {exc}")
