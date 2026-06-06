@@ -224,9 +224,30 @@ class PolyBot:
                 signal_found = await self.auto_trader.scan()
 
                 if signal_found:
+                    # ── Compute scaled trade size ─────────────────────────────
+                    if getattr(signal_found, "is_micro", False):
+                        # Micro phase: fixed dollar amount, ignore Kelly
+                        trade_size = float(getattr(signal_found, "micro_amount", 1.0))
+                    else:
+                        # Kelly base × regime size_multiplier × win-streak scale
+                        kelly   = self.risk.kelly_size(signal_found.price)
+                        regime_mult = float(getattr(signal_found, "size_multiplier", 1.0))
+                        trade_size  = kelly * regime_mult * self.risk.current_scale
+                        # Clamp: floor $1.00, ceiling max_per_trade × current_scale
+                        trade_size  = max(1.0, min(trade_size, config.max_per_trade * self.risk.current_scale))
+                        trade_size  = round(trade_size, 2)
+
+                    self.logger.info(
+                        f"[AutoTrader] 💰 Computed trade_size=${trade_size:.2f} "
+                        f"(kelly=${self.risk.kelly_size(signal_found.price):.2f} "
+                        f"regime_mult={getattr(signal_found,'size_multiplier',1.0):.2f} "
+                        f"scale={self.risk.current_scale:.2f}x "
+                        f"micro={getattr(signal_found,'is_micro',False)})"
+                    )
+
                     # Validate through shared risk manager
                     is_valid, reason = self.risk.validate_trade(
-                        size_usdc=config.max_per_trade,
+                        size_usdc=trade_size,
                         price=signal_found.price,
                         open_positions=self.positions.open_count
                     )
@@ -239,7 +260,7 @@ class PolyBot:
                         self.logger.info(
                             f"[AutoTrader] 🤖 Executing auto-trade: "
                             f"{signal_found.market_name[:40]} | "
-                            f"{signal_found.side} ${config.max_per_trade:.2f} "
+                            f"{signal_found.side} ${trade_size:.2f} "
                             f"@ {signal_found.price:.3f} (score={signal_found.score})"
                         )
 
@@ -249,7 +270,7 @@ class PolyBot:
                                 token_id=signal_found.token_id,
                                 side=signal_found.side,
                                 price=signal_found.price,
-                                size=config.max_per_trade,
+                                size=trade_size,
                                 order_type="GTC",
                             )
                         except Exception as exc:
@@ -259,14 +280,14 @@ class PolyBot:
                         if result:
                             order_id = result.get("id", result.get("orderID", ""))
                             self.logger.trade_executed(
-                                config.max_per_trade, signal_found.price, order_id
+                                trade_size, signal_found.price, order_id
                             )
                             self.positions.open_position(
                                 market=signal_found.market_name,
                                 token_id=signal_found.token_id,
                                 side=signal_found.side,
                                 entry_price=signal_found.price,
-                                size_usdc=config.max_per_trade,
+                                size_usdc=trade_size,
                                 source_wallet="auto_trader",
                                 order_id=order_id,
                             )

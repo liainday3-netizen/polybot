@@ -88,15 +88,31 @@ class RiskManager:
         self._check_day_reset()
         self.daily_pnl += pnl
 
+        max_factor = getattr(config, "AUTO_SCALE_MAX_FACTOR", 3.0)
+        loss_down  = getattr(config, "AUTO_SCALE_LOSS_DOWN_PCT", 10.0)
+        dd_reset   = getattr(config, "AUTO_SCALE_DRAWDOWN_RESET_PCT", 15.0)
+
         if pnl > 0:
             self.consecutive_wins += 1
-            # Auto-scale up after consecutive wins
             if self.consecutive_wins >= config.AUTO_SCALE_WINS_REQUIRED:
                 self.current_scale *= (1 + config.AUTO_SCALE_UP_PCT / 100)
+                self.current_scale  = min(self.current_scale, max_factor)  # hard cap
                 self.consecutive_wins = 0
-                print(f"📈 Auto-scaled up! New scale: {self.current_scale:.2f}x")
+                print(f"📈 Auto-scaled up! New scale: {self.current_scale:.2f}x (cap={max_factor:.1f}x)")
         else:
             self.consecutive_wins = 0
+            # Shrink scale on every loss to prevent over-exposure during drawdowns
+            self.current_scale *= (1 - loss_down / 100)
+            self.current_scale  = max(self.current_scale, 0.25)  # floor at 25%
+            print(f"📉 Scale trimmed on loss: {self.current_scale:.2f}x")
+
+        # Drawdown circuit: if daily loss exceeds threshold, reset scale to 1.0
+        if config.TOTAL_USDC > 0:
+            daily_loss_pct = abs(self.daily_pnl) / config.TOTAL_USDC * 100
+            if self.daily_pnl < 0 and daily_loss_pct >= dd_reset:
+                self.current_scale = 1.0
+                self.consecutive_wins = 0
+                print(f"⚠️  Drawdown reset: daily loss {daily_loss_pct:.1f}% >= {dd_reset:.0f}% — scale reset to 1.0x")
 
     def check_stop_loss(self, entry_price: float, current_price: float, side: str) -> bool:
         """

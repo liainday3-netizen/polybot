@@ -58,6 +58,9 @@ class Config:
     # Auto-Scaling
     AUTO_SCALE_UP_PCT: float = float(os.getenv('AUTO_SCALE_UP_PCT', '15'))
     AUTO_SCALE_WINS_REQUIRED: int = int(os.getenv('AUTO_SCALE_WINS_REQUIRED', '2'))
+    AUTO_SCALE_MAX_FACTOR: float = float(os.getenv('AUTO_SCALE_MAX_FACTOR', '3.0'))   # hard cap on current_scale
+    AUTO_SCALE_LOSS_DOWN_PCT: float = float(os.getenv('AUTO_SCALE_LOSS_DOWN_PCT', '10.0'))  # % to shrink on each loss
+    AUTO_SCALE_DRAWDOWN_RESET_PCT: float = float(os.getenv('AUTO_SCALE_DRAWDOWN_RESET_PCT', '15.0'))  # daily loss% that resets scale to 1.0
 
     # Auto-Trade (autonomous market scanner)
     AUTO_TRADE_ENABLED: bool = os.getenv('AUTO_TRADE_ENABLED', 'false').lower() == 'true'
